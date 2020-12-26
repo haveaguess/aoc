@@ -467,8 +467,8 @@
                         (<= (get-in status [:boss :hp]) 0) ;; boss's hp<=0 and player wins
                         (list (swap! min-mana-spent min (get-in status [:player :mana-spent])))
 
-                        (or (>= (get-in status [:player :mana-spent]) @min-mana-spent) ;; skip when it costs more mana than min found
-                            (> (get-in status [:magic action]) 1) ;; magic remains in effect hence not valid
+                        (or (<= @min-mana-spent (get-in status [:player :mana-spent])) ;; skip when it costs more mana than min found
+                            (< 1 (get-in status [:magic action])) ;; magic remains in effect hence not valid
                             (<= (get-in status [:player :hp]) 0) ;; player's hp<=0 and player loses
                             (< (get-in status [:player :mana]) (get-in magics [action :cost]))) ;; player out of mana
                         nil

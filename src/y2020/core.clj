@@ -591,3 +591,16 @@
   [(count black-only-grid)
    (-> (iterate g black-only-grid) (nth 100) count)])
 ;; [497 4156]
+
+
+;; 202025
+(let [[pub1 pub2] (->> "src/y2020/input202025" slurp (re-seq #"\d+") (map edn/read-string))
+      f (fn [seed] (fn [x] (mod (* seed x) 20201227)))
+      [loop-a loop-b] (loop [[n & more] (iterate (f 7) 1), a nil, b nil, cnt 0]
+                        (cond (and a b) [a b]
+                              (= n pub1) (recur more cnt b (inc cnt))
+                              (= n pub2) (recur more a cnt (inc cnt))
+                              :else (recur more a b (inc cnt))))]
+  [(-> (iterate (f pub1) 1) (nth loop-b))
+   (-> (iterate (f pub2) 1) (nth loop-a))])
+;; [297257 297257]

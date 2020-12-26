@@ -1,33 +1,35 @@
 (ns y2016.core
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str])
   (:import [java.security MessageDigest]))
+
+(def algorithm (MessageDigest/getInstance "MD5"))
+
+(def md5 (fn [^String s] (format "%032x" (BigInteger. 1 (.digest algorithm (.getBytes s))))))
 
 ;; 201601
 (let [dir-map {0   [0  1],  90 [ 1 0]
                180 [0 -1], 270 [-1 0]}
-      temp (reduce #(let [{:keys [xy dir]} %1
+      turn-map {"L" 270, "R" 90}
+      temp (reduce #(let [{:keys [xy dir path]} %1
                           [next-dir step] %2
-                          step (Integer/parseInt step)
-                          dir (mod (+ dir (if (= "L" next-dir) 270 90)) 360)
+                          step (edn/read-string step)
+                          dir (mod (+ dir (turn-map next-dir)) 360)
                           new-xy (map + (map * (dir-map dir) [step step]) xy)]
-                      {:dir dir
-                       :xy new-xy
-                       :r (conj (:r %1) new-xy)})
-                   {:xy [0 0] :dir 0 :r [[0 0]]}
-                   (->> (re-seq #"\d+|L|R" (slurp "src/y2016/input201601"))
-                        (partition 2)))
-      f (fn [[[x0 y0] [x1 y1]]]
+                      {:xy new-xy, :dir dir, :path (conj path new-xy)})
+                   {:xy [0 0] :dir 0 :path [[0 0]]}
+                   (->> "src/y2016/input201601" slurp (re-seq #"\d+|L|R") (partition 2)))
+      f (fn [[x y]] (+ (Math/abs x) (Math/abs y)))
+      g (fn [[[x0 y0] [x1 y1]]]
           (if (= x0 x1)
-            (for [b (range y0 y1 (if (< y0 y1) 1 -1))]
-              [x0 b])
-            (for [a (range x0 x1 (if (< x0 x1) 1 -1))]
-              [a y0])))
-      g (fn [[x y]] (+ (Math/abs x) (Math/abs y)))]
-  [(g (:xy temp))
-   (loop [paths (concat (mapcat f (partition 2 1 (:r temp))) [(:xy temp)])
+            (for [b (range y0 y1 (if (< y0 y1) 1 -1))] [x0 b])
+            (for [a (range x0 x1 (if (< x0 x1) 1 -1))] [a y0])))]
+  [(f (:xy temp))
+   (loop [path (concat (mapcat g (partition 2 1 (:path temp))) [(:xy temp)])
           seen #{}]
-     (if (seen (first paths))
-       (g (first paths))
-       (recur (rest paths) (conj seen (first paths)))))])
+     (if (seen (first path))
+       (f (first path))
+       (recur (rest path) (conj seen (first path)))))])
 ;; [226 79]
 
 
@@ -54,156 +56,126 @@
                   \B [7 \D \A \C]
                   \C [8 \C \B \C]
                   \D [\B \D \D \D]}
-      code-map {\U 0 \D 1 \L 2 \R 3 \newline \space}
-      f (fn [trans-map]
-          (fn [value item]
-            (let [{:keys [r curr]} value]
-              (if (= \space item)
-                (assoc value :r (conj r curr))
-                (assoc value :curr (get-in trans-map [curr item]))))))
-      g (f trans-map1)
-      h (f trans-map2)]
-  (map #(->> (slurp "src/y2016/input201602")
-             (map code-map)
-             (reduce % {:r [] :curr 5})
-             :r
-             (clojure.string/join))
-       [g h]))
-;; ("48584" "563B6")
+      code-map {\U 0 \D 1 \L 2 \R 3}
+      input (-> "src/y2016/input201602" slurp str/split-lines)
+      f (fn [m] (->> input (map (fn [line] (reduce #(get-in m [% (code-map %2)]) 5 line))) str/join))]
+  (mapv f [trans-map1 trans-map2]))
+;; ["48584" "563B6"]
 
 
 ;; 201603
-(let [input0 (map #(Integer/parseInt %) (re-seq #"\d+" (slurp "src/y2016/input201603")))
-      input1 (partition 3 input0)
-      input2 (partition 9 input0)
-      valid?3 (fn [[a b c]]
-                (and (< c (+ a b))
-                     (< b (+ a c))
-                     (< a (+ b c))))
+(let [input (->> "src/y2016/input201603" slurp (re-seq #"\d+") (map edn/read-string))
+      valid?3 (fn [[a b c]] (if (and (< c (+ a b))
+                                     (< b (+ a c))
+                                     (< a (+ b c)))
+                              1
+                              0))
       valid?9 (fn [[a b c d e f g h i]]
-                [(valid?3 [a d g])
-                 (valid?3 [b e h])
-                 (valid?3 [c f i])])]
-  [(->> (map    valid?3 input1) (remove false?) count)
-   (->> (mapcat valid?9 input2) (remove false?) count)])
+                (+ (valid?3 [a d g])
+                   (valid?3 [b e h])
+                   (valid?3 [c f i])))]
+  (mapv (fn [[p1 p2]] (->> input (partition p1) (map p2) (reduce +))) [[3 valid?3] [9 valid?9]]))
 ;; [869 1544]
 
 
 ;; 201604
-(let [inputs (re-seq #"([a-z-]+)(\d+)\[(\w+)]" (slurp "src/y2016/input201604"))
+(let [input (->> "src/y2016/input201604" slurp (re-seq #"([a-z-]+)(\d+)\[(\w+)]"))
       f (fn [[_ strs id crc]]
           (let [fmap (frequencies (remove #{\-} strs))
-                crc' (->> (into (sorted-map-by (fn [key1 key2]
-                                                 (compare [(get fmap key2) key1]
-                                                          [(get fmap key1) key2])))
-                                fmap)
+                crc' (->> fmap
+                          (into (sorted-map-by (fn [key1 key2] (compare [(fmap key2) key1]
+                                                                        [(fmap key1) key2]))))
                           keys
                           (take 5))]
-            (if (= crc' (seq crc)) (Integer/parseInt id) 0)))
+            (if (= crc' (seq crc)) (edn/read-string id))))
       g (fn [[_ strs id _]]
-          (let [id (Integer/parseInt id)
-                f #(char (+ 97 (mod (+ (int %) -97 id) 26)))
-                decrypted (clojure.string/join " " (map #(apply str (map f %)) (re-seq #"\w+" strs)))]
-            (if (re-seq #"northpole" decrypted)
-              id)))]
-  [(reduce + (map f inputs))
-   (remove nil? (map g inputs))])
+          (let [id (edn/read-string id)
+                f #(->> (mod (+ (int %) -97 id) 26) (+ 97) char)
+                decrypted (->> strs (re-seq #"\w+") (map #(str/join (map f %))))]
+            (if ((set decrypted) "northpole") id)))]
+  [(reduce + (keep f input))
+   (keep g input)])
 ;; [245102 (324)]
 
 
 ;; 201605
-(let [input (first (re-seq #"\w+" (slurp "src/y2016/input201605")))
-      algorithm (MessageDigest/getInstance "MD5")
-      five0 [\0 \0 \0 \0 \0]
-      md5 (fn [^String s]
-            (let [raw (.digest algorithm (.getBytes s))]
-              (format "%032x" (BigInteger. 1 raw))))
+(let [input (->> "src/y2016/input201605" slurp str/trim)
       xseq (->> (range)
-                (map (fn [n]
-                       (let [hash (md5 (str input n))]
-                         (if (= five0 (take 5 hash)) hash))))
-                (remove nil?))]
-  [(apply str (map #(nth % 5) (take 8 xseq)))
+                (keep #(let [hash (md5 (str input %))]
+                         (if (= "00000" (subs hash 0 5)) hash))))]
+  [(str/join (map #(subs % 5 6) (take 8 xseq)))
    (loop [xseq xseq
           r [0 0 0 0 0 0 0 0]
           remaining #{\0 \1 \2 \3 \4 \5 \6 \7}]
-     (if (empty? remaining)
-       (apply str r)
+     (if (seq remaining)
        (let [n (first xseq)
              n5 (nth n 5)
-             n6 (nth n 6)]
-         (recur (rest xseq)
-                (if (remaining n5)
-                  (assoc r (- (int n5) 48) n6)
-                  r)
-                (disj remaining n5)))))])
+             n6 (nth n 6)
+             r (if (remaining n5) (assoc r (- (int n5) 48) n6) r)]
+         (recur (rest xseq) r (disj remaining n5)))
+       (str/join r)))])
 ;; ["2414bc77" "437e60fc"]
 
 
 ;; 201606
-(let [f (fn [func] (->> (re-seq #"\w+" (slurp "src/y2016/input201606"))
+(let [f (fn [func] (->> "src/y2016/input201606" slurp (re-seq #"\w+")
                         (apply map #(key (apply func val (frequencies %&))))
-                        (apply str)))]
-  (map f [max-key min-key]))
-;; ("umcvzsmw" "rwqoacfz")
+                        str/join))]
+  (mapv f [max-key min-key]))
+;; ["umcvzsmw" "rwqoacfz"]
 
 
 ;; 201607
-(let [input (re-seq #"[^\n]+" (slurp "src/y2016/input201607"))
+(let [input (->> "src/y2016/input201607" slurp (re-seq #"[^\n]+"))
       abba? (fn [s]
-              (some #(and (re-seq #"(.)(.)\2\1" (apply str %))
-                          (= 2 (count (set %))))
+              (some #(and (re-seq #"(.)(.)\2\1" (str/join %)) (= 2 (count (set %))))
                     (partition 4 1 s)))
       aba? (fn [s]
-             (filter #(and (re-seq #"(.).\1" (apply str %))
-                           (= 2 (count (set %))))
+             (filter #(and (re-seq #"(.).\1" (str/join %)) (= 2 (count (set %))))
                      (partition 3 1 s)))
       f (fn [s]
           (let [s1 (re-seq #"(?<=^|])\w+" s)
                 s2 (re-seq #"(?<=\[)\w+"  s)]
-            (and (some abba? s1) (not-any? abba? s2))))
+            (if (and (some abba? s1) (not-any? abba? s2))
+              :valid)))
       g (fn [s]
           (let [s1 (re-seq #"(?<=^|])\w+" s)
                 s2 (re-seq #"(?<=\[)\w+"  s)]
-            (seq (clojure.set/intersection
-                  (set (map rest        (mapcat aba? s1)))
-                  (set (map #(take 2 %) (mapcat aba? s2)))))))]
-  (map #(count (filter identity (map % input))) [f g]))
-;; (118 260)
+            (if (seq (clojure.set/intersection
+                      (set (map rest        (mapcat aba? s1)))
+                      (set (map #(take 2 %) (mapcat aba? s2)))))
+              :valid)))]
+  (mapv #(count (keep % input)) [f g]))
+;; [118 260]
 
 
 ;; 201608
 (let [f (fn [board [ops a b]]
-          (let [[a b] (map #(Integer/parseInt %) [a b])]
+          (let [[a b] (map edn/read-string [a b])]
             (cond
               (= ops "rect") (reduce #(assoc % %2 1)
                                      board
-                                     (for [x (range a), y (range b)]
-                                       (+ (* y 50) x)))
-              (= ops "x=") (reduce #(assoc % %2 (nth board (if (>= %2 (* 50 b))
-                                                             (- %2 (* 50 b))
-                                                             (- (+ 300 %2) (* 50 b)))))
+                                     (for [x (range a), y (range b)] (+ (* y 50) x)))
+              (= ops "x=") (reduce #(assoc % %2 (board (- (if (>= %2 (* 50 b)) %2 (+ 300 %2)) (* 50 b))))
                                    board
-                                   (for [y (range 6)]
-                                     (+ (* y 50) a)))
-              (= ops "y=") (reduce #(assoc % %2 (nth board (if (>= (mod %2 50) b) (- %2 b) (- (+ 50 %2) b))))
+                                   (for [y (range 6)] (+ (* y 50) a)))
+              (= ops "y=") (reduce #(assoc % %2 (board (- (if (>= (mod %2 50) b) %2 (+ 50 %2)) b)))
                                    board
-                                   (for [x (range 50)]
-                                     (+ (* a 50) x))))))
-      temp (reduce f
-                   (vec (repeat 300 0))
-                   (->> (slurp "src/y2016/input201608")
-                        (re-seq #"rect|x=|y=|\d+")
-                        (partition 3)))]
-  [(count (filter pos? temp))
-   (dorun (map #(prn (apply str %)) (partition 50 (map #(if (= 1 %) "▓" "░") temp))))])
+                                   (for [x (range 50)] (+ (* a 50) x))))))
+      board (reduce f
+                    (vec (repeat (* 50 6) 0))
+                    (->> (slurp "src/y2016/input201608")
+                         (re-seq #"rect|x=|y=|\d+")
+                         (partition 3)))]
+  [(reduce + board)
+   (->> board (map #(if (= 1 %) "▓" "░")) (partition 50) (map str/join) (str/join "\n") println)])
 ;; [116 nil]
-;; "▓░░▓░▓▓▓░░░▓▓░░░░▓▓░▓▓▓▓░▓░░░░▓▓▓░░░▓▓░░▓▓▓▓░▓▓▓▓░"
-;; "▓░░▓░▓░░▓░▓░░▓░░░░▓░▓░░░░▓░░░░▓░░▓░▓░░▓░▓░░░░░░░▓░"
-;; "▓░░▓░▓░░▓░▓░░▓░░░░▓░▓▓▓░░▓░░░░▓▓▓░░▓░░░░▓▓▓░░░░▓░░"
-;; "▓░░▓░▓▓▓░░▓░░▓░░░░▓░▓░░░░▓░░░░▓░░▓░▓░░░░▓░░░░░▓░░░"
-;; "▓░░▓░▓░░░░▓░░▓░▓░░▓░▓░░░░▓░░░░▓░░▓░▓░░▓░▓░░░░▓░░░░"
-;; "░▓▓░░▓░░░░░▓▓░░░▓▓░░▓░░░░▓▓▓▓░▓▓▓░░░▓▓░░▓▓▓▓░▓▓▓▓░"
+;; ▓░░▓░▓▓▓░░░▓▓░░░░▓▓░▓▓▓▓░▓░░░░▓▓▓░░░▓▓░░▓▓▓▓░▓▓▓▓░
+;; ▓░░▓░▓░░▓░▓░░▓░░░░▓░▓░░░░▓░░░░▓░░▓░▓░░▓░▓░░░░░░░▓░
+;; ▓░░▓░▓░░▓░▓░░▓░░░░▓░▓▓▓░░▓░░░░▓▓▓░░▓░░░░▓▓▓░░░░▓░░
+;; ▓░░▓░▓▓▓░░▓░░▓░░░░▓░▓░░░░▓░░░░▓░░▓░▓░░░░▓░░░░░▓░░░
+;; ▓░░▓░▓░░░░▓░░▓░▓░░▓░▓░░░░▓░░░░▓░░▓░▓░░▓░▓░░░░▓░░░░
+;; ░▓▓░░▓░░░░░▓▓░░░▓▓░░▓░░░░▓▓▓▓░▓▓▓░░░▓▓░░▓▓▓▓░▓▓▓▓░
 
 
 ;; 201609
@@ -215,9 +187,8 @@
 
               (= (first text) \()
               (let [[s a b] (first (re-seq #"\((\d+)x(\d+)\)" text))
-                    [a b] (map #(Integer/parseInt %) [a b])
-                    new-text (subs text (+ (count s) a))]
-                (recur new-text
+                    [a b] (map edn/read-string [a b])]
+                (recur (subs text (+ (count s) a))
                        (+ r1 (* a b))
                        (+ r2 (* ((f (subs text (count s) (+ (count s) a))) 1) b))))
 
@@ -229,12 +200,11 @@
 
 ;; 201610
 (let [f (fn [r [v1 v2 v3 v4 v5 v6]]
-          (cond
-            (= "\n" v1) r
-            (= "value" v1) (update-in r [:value-chips v4] #(conj % (Integer/parseInt v2)))
-            :else (assoc-in r [:bots-logic v2] [v3 v4 v5 v6])))
+          (if (= "value" v1)
+            (update-in r [:value-chips v4] conj (edn/read-string v2))
+            (assoc-in r [:bots-logic v2] [v3 v4 v5 v6])))
       {:keys [bots-logic value-chips]} (->> (slurp "src/y2016/input201610")
-                                            (re-seq #"[^\n]+")
+                                            str/split-lines
                                             (map #(re-seq #"\d+|bot|output|value" %))
                                             (reduce f {}))]
   (loop [value-chips value-chips
@@ -244,18 +214,13 @@
           q1-bot (if (and (nil? q1-bot) (= (set values) #{17 61})) ready-bot q1-bot)
           [v1 v2] (sort values)
           [lowtarget lowvalue hightarget highvalue] (bots-logic ready-bot)
-          q2-product (if (and (= "output" lowtarget) (#{"0" "1" "2"} lowvalue))
-                       (conj q2-product v1)
-                       q2-product)]
-      (cond
-        (and q1-bot (= 3 (count q2-product))) [q1-bot (reduce * q2-product)]
-        :else (let [value-chips (if (= "output" lowtarget)
-                                  value-chips
-                                  (update value-chips lowvalue #(conj % v1)))
-                    value-chips (if (= "output" hightarget)
-                                  value-chips
-                                  (update value-chips highvalue #(conj % v2)))]
-                (recur (dissoc value-chips ready-bot) q1-bot q2-product))))))
+          q2-product (if (and (= "output" lowtarget)  (#{"0" "1" "2"} lowvalue))  (conj q2-product v1) q2-product)
+          q2-product (if (and (= "output" hightarget) (#{"0" "1" "2"} highvalue)) (conj q2-product v2) q2-product)]
+      (if (and q1-bot (= 3 (count q2-product)))
+        [q1-bot (reduce * q2-product)]
+        (let [value-chips (if (= "output" lowtarget)  value-chips (update value-chips lowvalue  conj v1))
+              value-chips (if (= "output" hightarget) value-chips (update value-chips highvalue conj v2))]
+          (recur (dissoc value-chips ready-bot) q1-bot q2-product))))))
 ;; ["181" 12567]
 
 
@@ -265,26 +230,25 @@
 ;; 2 PLM SM
 ;; 1 TG TM PLG SG
 
+
 ;; 201612
-(let [instructions (->> (slurp "src/y2016/input201612") (re-seq #"[^\n]+") vec)
-      f (fn [v memory]
-          (if (#{"a" "b" "c" "d"} v) (memory (keyword v)) (Integer/parseInt v)))
+(let [instructions (->> "src/y2016/input201612" slurp str/split-lines (mapv #(re-seq #"\S+" %)))
+      f (fn [v memory] (or (memory v) (edn/read-string v)))
       g (fn [memory]
-          (loop [ip 0
-                 memory memory]
-            (if-let [instruction (get instructions ip)]
-              (let [[op v1 v2] (re-seq #"\S+" instruction)]
-                (cond
-                  (= "cpy" op) (recur (inc ip) (update memory (keyword v2) (constantly (f v1 memory))))
-                  (= "inc" op) (recur (inc ip) (update memory (keyword v1) inc))
-                  (= "dec" op) (recur (inc ip) (update memory (keyword v1) dec))
-                  (= "jnz" op) (recur (+ ip (if (not= 0 (f v1 memory)) (Integer/parseInt v2) 1)) memory)))
-              (:a memory))))]
-  (map g [{:a 0 :b 0 :c 0 :d 0} {:a 0 :b 0 :c 1 :d 0}]))
-;; (318020 9227674)
+          (loop [ip 0, memory memory]
+            (if-let [[op v1 v2] (get instructions ip)]
+              (cond
+                (= "cpy" op) (recur (inc ip) (assoc memory v2 (f v1 memory)))
+                (= "inc" op) (recur (inc ip) (update memory v1 inc))
+                (= "dec" op) (recur (inc ip) (update memory v1 dec))
+                (= "jnz" op) (recur (+ ip (if (= 0 (f v1 memory)) 1 (edn/read-string v2))) memory))
+              (memory "a"))))]
+  (mapv g [{"a" 0 "b" 0 "c" 0 "d" 0} {"a" 0 "b" 0 "c" 1 "d" 0}]))
+;; [318020 9227674]
+
 
 ;; 201613
-(let [fav (->> (slurp "src/y2016/input201613") (re-seq #"\d+") first Integer/parseInt)
+(let [fav (->> "src/y2016/input201613" slurp (re-seq #"\d+") first edn/read-string)
       goal [31 39]
       open? (fn [x y]
               (->> (Integer/toBinaryString (+ (* (+ x y) (+ x y 1)) (* 2 x) fav))
@@ -319,114 +283,113 @@
         count)])
 ;; [86 127]
 
+
 ;; 201614
-(map (fn [q]
-       (let [algorithm (MessageDigest/getInstance "MD5")
-             md5' (fn [^String s]
-                    (format "%032x" (BigInteger. 1 (.digest algorithm (.getBytes s)))))
-             md5 (if (= q 1)
-                   md5'
-                   (fn [^String s]
-                     (reduce (fn [s _] (md5' s)) (md5' s) (range 2016))))
-             salt (->> (slurp "src/y2016/input201614") (re-seq #"\w+") first)
-             hash (fn hash [n]
-                    (lazy-seq
-                     (cons {:n n :md5 (md5 (str salt n))} (hash (inc n)))))
-             hashes (hash 0)
-             triples    (keep #(if-let [xs (re-seq #"(.)\1\1"  (:md5 %))]
-                                 (assoc % :d (second (first xs))))
-                              hashes)
-             quintuples (keep #(if-let [xs (re-seq #"(.)\1{4}" (:md5 %))]
-                                 (assoc % :ds (set (map second xs))))
-                              hashes)
-             f (fn [n d]
-                 (->> quintuples
-                      (drop-while #(<= (:n %) n))
-                      (take-while #(<= (:n %) (+ n 1000)))
-                      (filter #((:ds %) d))
-                      seq))]
-         (loop [[hash3 & more-hash3] triples
-                n 0]
-           (if (f (:n hash3) (:d hash3))
-             (if (= n 63)
-               (:n hash3)
-               (recur more-hash3 (inc n)))
-             (recur more-hash3 n)))))
-     [1 2])
-;; (35186 22429)
+(let [salt (->> "src/y2016/input201614" slurp str/trim)
+      f (fn [q]
+          (let [md5' (if (= q 1)
+                       md5
+                       (fn [^String s] (reduce (fn [s _] (md5 s)) s (range 2017))))
+                hash (fn hash [n]
+                       (lazy-seq
+                        (cons {:n n :md5 (md5' (str salt n))} (hash (inc n)))))
+                hashes (hash 0)
+                triples    (keep #(if-let [xs (re-seq #"(.)\1\1"  (:md5 %))]
+                                    (assoc % :d (second (first xs))))
+                                 hashes)
+                quintuples (keep #(if-let [xs (re-seq #"(.)\1{4}" (:md5 %))]
+                                    (assoc % :ds (set (map second xs))))
+                                 triples)
+                f (fn [n d]
+                    (->> quintuples
+                         (drop-while #(<= (:n %) n))
+                         (take-while #(<= (:n %) (+ n 1000)))
+                         (filter #((:ds %) d))
+                         seq))]
+            (loop [[hash3 & more] triples
+                   n 0]
+              (if (f (:n hash3) (:d hash3))
+                (if (= n 63)
+                  (:n hash3)
+                  (recur more (inc n)))
+                (recur more n)))))]
+  (mapv f [1 2016]))
+;; [35186 22429]
+
 
 ;; 201615
-(let [input1 (->> (slurp "src/y2016/input201615") (re-seq #"\d+") (map #(Integer/parseInt %)) (partition 4))
-      input2 (concat input1 '((0 11 0 0)))
+(let [input1 (->> "src/y2016/input201615" slurp (re-seq #"\d+") (map edn/read-string) (partition 4))
+      input2 (concat input1 [[0 11 0 0]])
       f (fn [input]
-          (let [c (count input)
-                f (fn [offset [_ total-positions _ start-position]]
-                    [total-positions (+ total-positions offset start-position)])
+          (let [f (fn [offset [_ total-positions _ start-position]]
+                    [total-positions (+ offset start-position)])
                 g (fn [ellipse [multiplier remainder]]
                     (= 0 (mod (+ remainder ellipse) multiplier)))
-                adjusted-positions (map f (range 1 (inc c)) input)
+                adjusted-positions (map f (range 1 (inc (count input))) input)
                 max-disc (apply max-key first adjusted-positions)
                 step (first max-disc)
                 offset (- step (mod (second max-disc) step))]
             (loop [total offset]
-              (if (= #{true} (set (map #(g total %) adjusted-positions)))
+              (if (every? #{true} (map #(g total %) adjusted-positions))
                 total
                 (recur (+ step total))))))]
-  (map f [input1 input2]))
-;; (203660 2408135)
+  (mapv f [input1 input2]))
+;; [203660 2408135]
 
 
 ;; 201616
-(map (fn [len]
-       (let [f #(apply str (map {\0 \1, \1 \0} (reverse %)))
-             g #(repeat (seq %))
-             input-x (->> (slurp "src/y2016/input201616") (re-seq #"\w+") first)
-             input-X (f input-x)
-             interpolation-len (/ len (inc (count input-x)))
-             interpolate (fn [s]
-                           (if (> (count s) interpolation-len)
-                             s
-                             (recur (str s "0" (f s)))))
-             interpolation (interpolate "001")
-             interpolation-1 (take-nth 2 interpolation)
-             interpolation-2 (take-nth 2 (drop 1 interpolation))
-             x (->> (interleave (g input-x) interpolation-1 (g input-X) interpolation-2)
-                    flatten
-                    (take len)
-                    (apply str))
-             checksum (fn [s]
-                        (if (odd? (count s))
-                          s
-                          (recur (apply str (map (fn [[x y]] (if (= x y) \1 \0)) (partition 2 s))))))]
-         (checksum x))) [272 35651584])
-;; ("11100111011101111" "10001110010000110")
+(let [g #(-> % (str/escape {\0 \1, \1 \0}) str/reverse)
+      input (-> "src/y2016/input201616" slurp str/trim)
+      interpolate (fn [s len] (if (> (count s) len) (subs s 0 len) (recur (str s "0" (g s)) len)))
+      checksum (fn [s]
+                 (if (odd? (count s))
+                   s
+                   (recur (->> (partition 2 s) (map (fn [[x y]] (if (= x y) \1 \0))) str/join))))
+      f #(checksum (interpolate input %))]
+  (mapv f [272 35651584]))
+;; ["11100111011101111" "10001110010000110"]
+
 
 ;; 201617
-(let [input (first (re-seq #"\w+" (slurp "src/y2016/input201617")))
-      dirs {0 [\U 0 -1], 1 [\D 0 1], 2 [\L 1 0], 3 [\R -1 0]}
-      goal [3 3]
-      algorithm (MessageDigest/getInstance "MD5")
-      md5 (fn [^String s]
-            (let [raw (.digest algorithm (.getBytes s))]
-              (format "%032x" (BigInteger. 1 raw))))
-      walk (fn [s] (keep-indexed #(if (#{\b \c \d \e \f} %2) (dirs %)) (subs (md5 s) 0 4)))
-      neighbors (fn [[x y] [_ offset-x offset-y]]
-                  (let [x' (+ x offset-x), y' (+ y offset-y)]
-                    (when (and (>= x' 0) (>= y' 0))
-                      [x' y'])))
-      estimate-cost (fn [xy] (reduce + (map #(Math/abs (- %1 %2)) xy goal)))]
-  (loop [passcode input
-         pos [0 0]]
-    (let [open-doors (map #(neighbors pos %) (walk input))]
-      open-doors)))
+(let [passcode (->> "src/y2016/input201617" slurp str/trim)
+      dir-map {\D [0 1], \U [0 -1], \L [-1, 0], \R [1 0]}
+      xyf (fn [xy dir] (map + xy (dir-map dir)))
+      valid? (fn [s]
+               (let [xs (reductions xyf [0 0] s)]
+                 (and (every? #(<= 0 % 3) (flatten xs)) xs)))
+      win? (fn [s]
+             (let [xs (reductions xyf [0 0] s)]
+               (and (every? #(<= 0 % 3) (flatten xs))
+                    (= [3 3] (last xs)))))
+      valid-dir (fn [xs] (->> xs (zipmap [\U \D \L \R]) (keep #(if (#{\b \c \d \e \f} (val %)) (key %)))))
+      q1 (loop [trial-codes (sorted-set-by #(compare [(count %) %] [(count %2) %2]) "")]
+           (let [code (first trial-codes)
+                 new-trial-codes (disj trial-codes code)]
+             (cond (win? code) code
+                   (valid? code) (recur (->> code (str passcode) md5 (take 4) valid-dir
+                                             (map #(str code %)) (into new-trial-codes)))
+                   :else (recur new-trial-codes))))
+      q2 (loop [trial-codes #{""}
+                r 0]
+           (let [code (first trial-codes)
+                 new-trial-codes (disj trial-codes code)]
+             (cond (nil? code) r
+                   (win? code) (recur new-trial-codes (max r (count code)))
+                   (valid? code) (recur (->> code (str passcode) md5 (take 4) valid-dir
+                                             (map #(str code %)) (into new-trial-codes))
+                                        r)
+                   :else (recur new-trial-codes r))))]
+  [q1 q2])
+;; ["DURLDRRDRD" 650]
+
 
 ;; 201618
-(map (fn [rows]
-       (let [first-row (first (re-seq #"\S+" (slurp "src/y2016/input201618")))
-             trap #{[\^ \^ \.] [\. \^ \^] [\. \. \^] [\^ \. \.]}
-             f (fn [s] (apply str (map #(if (trap %) \^ \.) (partition 3 1 (str "." s ".")))))]
-         (->> (iterate f first-row) (take rows) (apply str) (reduce #(if (= %2 \.) (inc %) %) 0))))
-     [40 400000])
+(mapv (fn [rows]
+        (let [first-row (->> "src/y2016/input201618" slurp str/trim)
+              trap #{[\^ \^ \.] [\. \^ \^] [\. \. \^] [\^ \. \.]}
+              f (fn [s] (->> (str "." s ".") (partition 3 1) (map #(if (trap %) \^ \.)) str/join))]
+          (->> (iterate f first-row) (take rows) str/join (filter #(= % \.)) count)))
+      [40 400000])
 ;; (1951 20002936)
 
 
@@ -435,8 +398,7 @@
 ;;              -- -- -- -- -
 ;; 1234567890123456789012345   knock=12,n1=12,n2=13,total-crossed=9
 ;;             - -- -- -- --
-(let [input (->> (slurp "src/y2016/input201619") (re-seq #"\d+") first Integer/parseInt)
-      input 3014603
+(let [input (->> (slurp "src/y2016/input201619") edn/read-string)
       f (fn [r [a b]]
           (if (nil? b)
             (cons a r)
@@ -444,7 +406,7 @@
       g (fn [n elves]
           (let [knock (quot n 2)
                 total-crossed (quot (+ n 2) 3)
-                n1 (- (quot n 2) (if (even? n) 1 0))
+                n1 (- knock (if (even? n) 1 0))
                 n2 (if (even? n) n1 (inc n1))
                 part1 (take n1 elves)
                 part2 (drop n2 elves)]
@@ -466,28 +428,28 @@
 ;; 201620
 (let [input (->> (slurp "src/y2016/input201620")
                  (re-seq #"\d+")
-                 (map clojure.edn/read-string)
+                 (map edn/read-string)
                  (partition 2)
                  vec
                  (sort-by first))
-      f (fn [[total low high] [a b]]
+      f (fn [lower-bound [start end]]
+          (if (<= start lower-bound)
+            (max lower-bound (inc end))
+            lower-bound))
+      g (fn [[total low high] [a b]]
           (cond
             (= -1 low) [0 a b]
             (or (and (<= low b) (<= a high))
                 (and (>= low b) (>= a high))) [total (min low a) (max high b)]
             :else [(+ total (- high low -1)) a b]))]
-  [(loop [lower-bound 0
-          [[start end] :as input] input]
-     (if (<= start lower-bound)
-       (recur (max lower-bound (inc end)) (rest input))
-       lower-bound))
-   (let [[total low high] (reduce f [0 -1 -1] input)]
+  [(reduce f 0 input)
+   (let [[total low high] (reduce g [0 -1 -1] input)]
      (- 4294967296 total (- high low -1)))])
 ;; [22887907 109]
 
 
 ;; 201621
-(let [input (->> (slurp "src/y2016/input201621") (re-seq #"[^\n]+") (map #(re-seq #"\S+" %)))
+(let [input (->> "src/y2016/input201621" slurp str/split-lines (map #(re-seq #"\S+" %)))
       rotate (fn [s offset]
                (let [offset (mod offset (count s))] (str (subs s offset) (subs s 0 offset))))
       rotate2 (fn [s [letter]]
@@ -500,30 +462,29 @@
                   (rotate s (- index (m index)))))
       f-swap (fn [s p1 p2 p5]
                (cond
-                 (= "position" p1) (let [s (vec s)
-                                         [p2 p5] (map #(Integer/parseInt %) [p2 p5])]
-                                     (apply str (-> s (assoc p2 (s p5)) (assoc p5 (s p2)))))
-                 (= "letter" p1)   (let [[p2 p5] (map first [p2 p5])
-                                         m {p2 p5, p5 p2}]
-                                     (apply str (map #(get m % %) s)))))
+                 (= "position" p1) (let [v (vec s)
+                                         [p2 p5] (map #(v (edn/read-string %)) [p2 p5])]
+                                     (-> s (str/escape {p2 p5, p5 p2})))
+                 (= "letter" p1)   (let [[p2 p5] (map first [p2 p5])]
+                                     (-> s (str/escape {p2 p5, p5 p2})))))
       f-reverse (fn [s p2 p4]
-                  (let [s (apply str s)
-                        [p2 p4] (map #(Integer/parseInt %) [p2 p4])]
+                  (let [s (str/join s)
+                        [p2 p4] (map edn/read-string [p2 p4])]
                     (str (subs s 0 p2)
-                         (clojure.string/reverse (subs s p2 (inc p4)))
+                         (str/reverse (subs s p2 (inc p4)))
                          (subs s (inc p4)))))
       f-move (fn [s p2 p5 & [rev?]]
-               (let [[p2 p5] (map #(Integer/parseInt %) [p2 p5])
+               (let [[p2 p5] (map edn/read-string [p2 p5])
                      [p2 p5 rev?] (if (< p2 p5) [p2 p5 rev?] [p5 p2 (not rev?)])]
                  (str (subs s 0 p2)
-                      (apply str (rotate (subs s p2 (inc p5)) (if rev? -1 1)))
+                      (str/join (rotate (subs s p2 (inc p5)) (if rev? -1 1)))
                       (subs s (inc p5)))))
       f (fn [s [p0 p1 p2 p3 p4 p5 p6]]
           (cond
             (= "swap" p0) (f-swap s p1 p2 p5)
             (= "rotate" p0) (cond
-                              (= "left"  p1) (rotate s (Integer/parseInt p2))
-                              (= "right" p1) (rotate s (- (count s) (Integer/parseInt p2)))
+                              (= "left"  p1) (rotate s (edn/read-string p2))
+                              (= "right" p1) (rotate s (- (count s) (edn/read-string p2)))
                               (= "based" p1) (rotate2 s p6))
             (= "reverse" p0) (f-reverse s p2 p4)
             (= "move" p0) (f-move s p2 p5)))
@@ -531,8 +492,8 @@
           (cond
             (= "swap" p0) (f-swap s p1 p5 p2)
             (= "rotate" p0) (cond
-                              (= "right" p1) (rotate s (Integer/parseInt p2))
-                              (= "left"  p1) (rotate s (- (count s) (Integer/parseInt p2)))
+                              (= "right" p1) (rotate s (edn/read-string p2))
+                              (= "left"  p1) (rotate s (- (count s) (edn/read-string p2)))
                               (= "based" p1) (rotate3 s p6))
             (= "reverse" p0) (f-reverse s p2 p4)
             (= "move" p0) (f-move s p2 p5 :rev)))]
@@ -545,11 +506,12 @@
 ;; root@ebhq-gridcenter# df -h
 ;; Filesystem              Size  Used  Avail  Use%
 ;; /dev/grid/node-x0-y0     94T   73T    21T   77%
-(let [input (->> (slurp "src/y2016/input201622") (re-seq #"\d+") (map #(Integer/parseInt %)) (partition 6))]
-  (count (for [[x1 y1 s1 u1 a1 _] input
-               [x2 y2 s2 u2 a2 _] input
-               :when (and (not= [x1 y1] [x2 y2]) (<= u1 a2) (< 0 u1))]
-           1)))
+(let [input (->> "src/y2016/input201622" slurp (re-seq #"\d+") (map edn/read-string) (partition 6))
+      q1 (count (for [[x1 y1 _ u1 _  _] input
+                      [x2 y2 _ _  a2 _] input
+                      :when (and (not= [x1 y1] [x2 y2]) (<= u1 a2) (< 0 u1))]
+                  1))]
+  q1)
 
 
 ;; 201623
