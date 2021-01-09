@@ -1,5 +1,6 @@
 (ns y2019.core
-  (:require [clojure.edn :as edn]))
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]))
 
 ;; A program can be in these states: :init, :running, :paused or :done
 ;; When a program is created it's in :init state
@@ -52,8 +53,7 @@
   (if (= (:status program) :done)
     program
     (->> (iterate run-program* (assoc program :status :running))
-         (drop-while #(= :running (:status %)))
-         first)))
+         (some #(if (not= :running (:status %)) %)))))
 
 ;; 201901
 (let [input (->> (slurp "src/y2019/input201901")
@@ -203,7 +203,7 @@
       (apply map list)
       (map #(if (= "1" (first (drop-while #{"2"} %))) "▓" "░"))
       (partition 25)
-      (mapv #(println (apply str %))))]
+      (mapv #(println (str/join %))))]
 ;; [2440 [nil nil nil nil nil nil]]
 ;; 0110011110011000011001100
 ;; 1001000010100100001010010
@@ -385,8 +385,7 @@
                                  :else state))))
                      (assoc state :program (assoc new-program :output []))
                      (partition 3 output)))))
-               (drop-while #(not= :done (get-in % [:program :status])))
-               first))]
+               (some #(if (= :done (get-in % [:program :status])) %))))]
   [(-> (f {}) :video vals frequencies (get 2))
    (-> (f {0 2}) :score)])
 ;; [318 16309]
@@ -402,7 +401,7 @@
                 inputs (butlast coll1)
                 output (last coll1)]
             (map d (repeat output) inputs)))
-      data (->> (re-seq #"[^\n]+" (slurp "src/y2019/input201914"))
+      data (->> (re-seq #".+" (slurp "src/y2019/input201914"))
                 (mapcat #(f (re-seq #"(\d+) (\w+)" %)))
                 (into {}))
       ;; line 31 SVCQ, 1 TXCR => 8 VMDT becomes {["VMDT" "TXCR"] [8 1], ["VMDT" "SVCQ"] [8 31]
@@ -664,6 +663,8 @@
 
 
 
-(map #(println % (mod % 8)) (sort [552597
-553942
+(map #(println % (mod % 8)) (sort [509848
+510705
+557460
+558576
 ]))

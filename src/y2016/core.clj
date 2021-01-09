@@ -3,9 +3,44 @@
             [clojure.string :as str])
   (:import [java.security MessageDigest]))
 
+(defn- permutations [s]
+  (lazy-seq
+   (if (next s)
+     (for [head s
+           tail (permutations (disj s head))]
+       (cons head tail))
+     [s])))
+
 (def algorithm (MessageDigest/getInstance "MD5"))
 
-(def md5 (fn [^String s] (format "%032x" (BigInteger. 1 (.digest algorithm (.getBytes s))))))
+(defn md5 [^String s] (format "%032x" (BigInteger. 1 (.digest algorithm (.getBytes s)))))
+
+(defn computer [day]
+  (fn [memory]
+    (let [code (->> day (str "src/y2016/input2016") slurp str/split-lines (mapv #(re-seq #"\S+" %)))
+          code-map {"inc" "dec", "dec" "inc", "tgl" "inc", "cpy" "jnz", "jnz" "cpy"}
+          f (fn [v memory] (or (memory v) (edn/read-string v)))]
+      (loop [ip 0, code code, memory memory, expect 0, cnt 0]
+        (if (and (= 23 day) (= 17 ip)) (println memory))
+        (if-let [[op v1 v2] (get code ip)]
+          (cond
+            (= "cpy" op) (if (#{"a" "b" "c" "d"} v2)
+                           (recur (inc ip) code (assoc memory v2 (f v1 memory)) expect (inc cnt))
+                           (recur (inc ip) code memory expect (inc cnt)))
+            (= "inc" op) (recur (inc ip) code (update memory v1 inc) expect (inc cnt))
+            (= "dec" op) (recur (inc ip) code (update memory v1 dec) expect (inc cnt))
+            (= "jnz" op) (recur (+ ip (if (= 0 (f v1 memory)) 1 (f v2 memory))) code memory expect (inc cnt))
+            (= "out" op) (if (= (f v1 memory) expect)
+                           (if (< 100000 cnt)
+                             :good
+                             (recur (inc ip) code memory (- 1 expect) (inc cnt))))
+            (= "tgl" op) (let [offset (+ ip (f v1 memory))]
+                           (if (<= 0 offset (dec (count code)))
+                             (let [ops (get code offset)
+                                   new-code (assoc code offset (cons (code-map (first ops)) (rest ops)))]
+                               (recur (inc ip) new-code memory expect (inc cnt)))
+                             (recur (inc ip) code memory expect (inc cnt)))))
+          (memory "a"))))))
 
 ;; 201601
 (let [dir-map {0   [0  1],  90 [ 1 0]
@@ -103,7 +138,7 @@
       xseq (->> (range)
                 (keep #(let [hash (md5 (str input %))]
                          (if (= "00000" (subs hash 0 5)) hash))))]
-  [(str/join (map #(subs % 5 6) (take 8 xseq)))
+  [(->> xseq (take 8) (map #(subs % 5 6)) str/join)
    (loop [xseq xseq
           r [0 0 0 0 0 0 0 0]
           remaining #{\0 \1 \2 \3 \4 \5 \6 \7}]
@@ -126,7 +161,7 @@
 
 
 ;; 201607
-(let [input (->> "src/y2016/input201607" slurp (re-seq #"[^\n]+"))
+(let [input (->> "src/y2016/input201607" slurp str/split-lines)
       abba? (fn [s]
               (some #(and (re-seq #"(.)(.)\2\1" (str/join %)) (= 2 (count (set %))))
                     (partition 4 1 s)))
@@ -210,7 +245,7 @@
   (loop [value-chips value-chips
          q1-bot nil
          q2-product []]
-    (let [[ready-bot values] (first (filter #(= 2 (count (second %))) value-chips))
+    (let [[ready-bot values] (some #(if (= 2 (count (second %))) %) value-chips)
           q1-bot (if (and (nil? q1-bot) (= (set values) #{17 61})) ready-bot q1-bot)
           [v1 v2] (sort values)
           [lowtarget lowvalue hightarget highvalue] (bots-logic ready-bot)
@@ -225,30 +260,46 @@
 
 
 ;; 201611
-;; 4
-;; 3 PG PM RG RM
-;; 2 PLM SM
-;; 1 TG TM PLG SG
+(let [elevator-map {1 [2]
+                    2 [1 3]
+                    3 [2 4]
+                    4 [3]}
+      chip-gen-map {\a \A, \b \B, \c \C, \d \D, \e \E}
+      valid-level? (fn [level]
+                     (let [generators (clojure.set/intersection level #{\A \B \C \D \E})
+                           chips (clojure.set/intersection level #{\a \b \c \d \e})]
+                       (or (empty? generators)
+                           (every? #(generators (chip-gen-map %)) chips))))
+      invalid? (fn [[_ & levels]]
+                 (every? valid-level? levels))
+      f (fn [[level & levels :as state]]
+          (->> (for [next-level (elevator-map level)
+                     to-move (into (set (map hash-set (state level)))
+                                   (->> (permutations (state level)) (map #(set (take 2 %)))))]
+                 (-> state
+                     (assoc 0 next-level)
+                     (assoc level (clojure.set/difference (state level) to-move))
+                     (assoc next-level (clojure.set/union (state next-level) to-move))))
+               (filter invalid?)))]
+  (loop [step 0
+         pending [[1 #{\a \b} #{\A} #{\B} #{}] #_[1 #{\A \a \B \C} #{\b \c} #{\D \d \E \e} #{}]]
+         visited #{}]
+    (println (count visited))
+    (if (some #(= 4 (count (% 4))) pending)
+      step
+      (recur (inc step)
+             (remove visited (mapcat f pending))
+             (into visited pending)))))
 
 
 ;; 201612
-(let [instructions (->> "src/y2016/input201612" slurp str/split-lines (mapv #(re-seq #"\S+" %)))
-      f (fn [v memory] (or (memory v) (edn/read-string v)))
-      g (fn [memory]
-          (loop [ip 0, memory memory]
-            (if-let [[op v1 v2] (get instructions ip)]
-              (cond
-                (= "cpy" op) (recur (inc ip) (assoc memory v2 (f v1 memory)))
-                (= "inc" op) (recur (inc ip) (update memory v1 inc))
-                (= "dec" op) (recur (inc ip) (update memory v1 dec))
-                (= "jnz" op) (recur (+ ip (if (= 0 (f v1 memory)) 1 (edn/read-string v2))) memory))
-              (memory "a"))))]
-  (mapv g [{"a" 0 "b" 0 "c" 0 "d" 0} {"a" 0 "b" 0 "c" 1 "d" 0}]))
+(let [f (computer 12)]
+  (mapv f [{"a" 0 "b" 0 "c" 0 "d" 0} {"a" 0 "b" 0 "c" 1 "d" 0}]))
 ;; [318020 9227674]
 
 
 ;; 201613
-(let [fav (->> "src/y2016/input201613" slurp (re-seq #"\d+") first edn/read-string)
+(let [fav (->> "src/y2016/input201613" slurp edn/read-string)
       goal [31 39]
       open? (fn [x y]
               (->> (Integer/toBinaryString (+ (* (+ x y) (+ x y 1)) (* 2 x) fav))
@@ -323,14 +374,15 @@
       f (fn [input]
           (let [f (fn [offset [_ total-positions _ start-position]]
                     [total-positions (+ offset start-position)])
-                g (fn [ellipse [multiplier remainder]]
-                    (= 0 (mod (+ remainder ellipse) multiplier)))
+                g (fn [ellipse]
+                    (fn [[multiplier remainder]]
+                      (= 0 (mod (+ remainder ellipse) multiplier))))
                 adjusted-positions (map f (range 1 (inc (count input))) input)
                 max-disc (apply max-key first adjusted-positions)
                 step (first max-disc)
                 offset (- step (mod (second max-disc) step))]
             (loop [total offset]
-              (if (every? #{true} (map #(g total %) adjusted-positions))
+              (if (every? (g total) adjusted-positions)
                 total
                 (recur (+ step total))))))]
   (mapv f [input1 input2]))
@@ -352,33 +404,29 @@
 
 ;; 201617
 (let [passcode (->> "src/y2016/input201617" slurp str/trim)
-      dir-map {\D [0 1], \U [0 -1], \L [-1, 0], \R [1 0]}
+      dir-map {\D [0 1], \U [0 -1], \L [-1, 0], \R [1 0], nil [0 0]}
       xyf (fn [xy dir] (map + xy (dir-map dir)))
-      valid? (fn [s]
-               (let [xs (reductions xyf [0 0] s)]
-                 (and (every? #(<= 0 % 3) (flatten xs)) xs)))
-      win? (fn [s]
-             (let [xs (reductions xyf [0 0] s)]
-               (and (every? #(<= 0 % 3) (flatten xs))
-                    (= [3 3] (last xs)))))
-      valid-dir (fn [xs] (->> xs (zipmap [\U \D \L \R]) (keep #(if (#{\b \c \d \e \f} (val %)) (key %)))))
-      q1 (loop [trial-codes (sorted-set-by #(compare [(count %) %] [(count %2) %2]) "")]
-           (let [code (first trial-codes)
-                 new-trial-codes (disj trial-codes code)]
-             (cond (win? code) code
-                   (valid? code) (recur (->> code (str passcode) md5 (take 4) valid-dir
-                                             (map #(str code %)) (into new-trial-codes)))
-                   :else (recur new-trial-codes))))
-      q2 (loop [trial-codes #{""}
+      valid? (fn [xy] (every? #(<= 0 % 3) xy))
+      win? (fn [xy] (= [3 3] xy))
+      valid-dirs (fn [xs] (->> xs (zipmap [\U \D \L \R]) (keep #(if (#{\b \c \d \e \f} (val %)) (key %)))))
+      next-moves (fn [code xy]
+                   (->> (str passcode code) md5 (take 4) valid-dirs (map #(vector (str code %) (xyf xy %)))))
+      q1 (loop [trials (sorted-set-by #(compare [(count (first %1)) (first %1)]
+                                                [(count (first %2)) (first %2)])
+                                      ["" [0 0]])]
+           (let [[code xy :as trial] (first trials)
+                 new-trials (disj trials trial)]
+             (cond (win? xy) code
+                   (valid? xy) (recur (->> (next-moves code xy) (into new-trials)))
+                   :else (recur new-trials))))
+      q2 (loop [trials #{["" [0 0]]}
                 r 0]
-           (let [code (first trial-codes)
-                 new-trial-codes (disj trial-codes code)]
-             (cond (nil? code) r
-                   (win? code) (recur new-trial-codes (max r (count code)))
-                   (valid? code) (recur (->> code (str passcode) md5 (take 4) valid-dir
-                                             (map #(str code %)) (into new-trial-codes))
-                                        r)
-                   :else (recur new-trial-codes r))))]
+           (let [[code xy :as trial] (first trials)
+                 new-trials (disj trials trial)]
+             (cond (nil? trial) r
+                   (win? xy) (recur new-trials (max r (count code)))
+                   (valid? xy) (recur (->> (next-moves code xy) (into new-trials)) r)
+                   :else (recur new-trials r))))]
   [q1 q2])
 ;; ["DURLDRRDRD" 650]
 
@@ -430,7 +478,6 @@
                  (re-seq #"\d+")
                  (map edn/read-string)
                  (partition 2)
-                 vec
                  (sort-by first))
       f (fn [lower-bound [start end]]
           (if (<= start lower-bound)
@@ -510,32 +557,99 @@
       q1 (count (for [[x1 y1 _ u1 _  _] input
                       [x2 y2 _ _  a2 _] input
                       :when (and (not= [x1 y1] [x2 y2]) (<= u1 a2) (< 0 u1))]
-                  1))]
-  q1)
+                  1))
+      q2 (+ 9 26 25 2 (* 29 5))
+      wall (keep #(if (< 400 (nth % 3)) (reverse (take 2 %))) input)
+      stage (keep #(if (< 30 (nth % 4)) (reverse (take 2 %))) input)
+      grid (vec (repeat 31 (vec (repeat 31 "."))))
+      grid (reduce #(assoc-in % %2 "#") grid wall)
+      grid (reduce #(assoc-in % %2 "_") grid stage)
+      grid (assoc-in grid [0 30] "G")]
+  (mapv #(println (str/join %)) grid)
+  [q1 q2])
+;; [934 207]
+;; there's one empty cell at (13,27)
+;; there're almost full cells between (5-30,15) acting like walls
+;; takes  9   to move _ from 13,27 to  4,27
+;; takes 26   to move _ from  4,27 to  4,1
+;; takes 25   to move _ from  4,1  to 29,1
+;; takes  2   to move _ from 29,1  to 30,0 and G from 30,0 to 29,0
+;; takes 29x5 to move G from 29,0  to  0,0
+;; (+ 9 26 25 2 (* 29 5))
 
 
 ;; 201623
-(let [instructions (->> (slurp "src/y2016/input201623") (re-seq #"[^\n]+") vec)
-      f (fn [v memory]
-          (if (#{"a" "b" "c" "d"} v) (memory (keyword v)) (Integer/parseInt v)))
-      g (fn [memory]
-          (loop [ip 0
-                 memory memory]
-            (if-let [instruction (get instructions ip)]
-              (let [[op v1 v2] (re-seq #"\S+" instruction)]
-                (cond
-                  (= "cpy" op) (recur (inc ip) (update memory (keyword v2) (constantly (f v1 memory))))
-                  (= "inc" op) (recur (inc ip) (update memory (keyword v1) inc))
-                  (= "dec" op) (recur (inc ip) (update memory (keyword v1) dec))
-                  (= "jnz" op) (recur (+ ip (if (not= 0 (f v1 memory)) (Integer/parseInt v2) 1)) memory)))
-              (:a memory))))]
-  (map g [{:a 0 :b 0 :c 0 :d 0} {:a 0 :b 0 :c 1 :d 0}])
-  instructions)
+(let [f (computer 23)]
+  (map #(println (f %)) [{"a" 7 "b" 0 "c" 0 "d" 0} {"a" 12 "b" 0 "c" 0 "d" 0}]))
+;; all the interim console output tells us that in register a it's simply doing a factorial of value a
+;; then line 17 "tgl c" triggers for a few times altering lines 2/4/6/8 away from line 17
+;; making lines 20-26 add to register a the multiplication of two constants in line 20/21
+;; in this case the constants are 78 and 70 with a product of 5460
+;; so part2 is simply 12!+5460 = 479007060
+;; and part1 10500 is verified by 7!+5460 = 10500
+;; {a 42, b 5, c 10, d 0}
+;; {a 210, b 4, c 8, d 0}
+;; {a 840, b 3, c 6, d 0}
+;; {a 2520, b 2, c 4, d 0}
+;; {a 5040, b 1, c 2, d 0}
+;; 10500
+;; {a 132, b 10, c 20, d 0}
+;; {a 1320, b 9, c 18, d 0}
+;; {a 11880, b 8, c 16, d 0}
+;; {a 95040, b 7, c 14, d 0}
+;; {a 665280, b 6, c 12, d 0}
+;; {a 3991680, b 5, c 10, d 0}
+;; <break the program>
+
 
 ;; 201624
-(let [input (->> (slurp "src/y2016/input201624") (re-seq #"[^\n]+"))]
-  input)
+(let [input (->> "src/y2016/input201624" slurp str/split-lines (mapv vec))
+      find-neighbor (fn [visited positions]
+                      (for [position positions
+                            offset [[1 0] [-1 0] [0 1] [0 -1]]
+                            :let [neighbor-pos (map + position offset)
+                                  neighbor (get-in input neighbor-pos)]
+                            :when (and (not (visited neighbor-pos)) neighbor (not= \# neighbor))]
+                        [neighbor-pos neighbor]))
+      scan (fn [pos]
+             (loop [step 1
+                    to-search [pos]
+                    visited-pos #{pos}
+                    visited-nodes #{}
+                    r #{}]
+               (let [neighbors (find-neighbor visited-pos to-search)
+                     neighbors-pos (map first neighbors)
+                     found (keep #(if-not (or (= \. (second %)) (visited-nodes (second %)))
+                                    [(second %) step])
+                                 neighbors)]
+                 (if (seq neighbors)
+                   (recur (inc step)
+                          (set neighbors-pos)
+                          (into visited-pos neighbors-pos)
+                          (into visited-nodes (map second found))
+                          (into r found))
+                   r))))
+      pos-map (into {} (for [x (range (count input)), y (range (count (first input)))
+                             :let [v (get-in input [x y])]
+                             :when (not (#{\# \.} v))]
+                         [v [x y]]))
+      distance-map (into {} (for [[v pos] pos-map
+                                  [node distance] (scan pos)]
+                              [#{v node} distance]))]
+  (let [x (->> (set (keys pos-map))
+               permutations
+               (keep (fn [path]
+                       (if (= \0 (first path))
+                         [(->> (partition 2 1 path) (reduce #(+ % (distance-map (set %2))) 0)) (last path)]))))]
+    [(reduce min (map first x))
+     (reduce min (map #(+ (first %) (distance-map #{(second %) \0})) x))]))
+;; [464 652]
+
 
 ;; 201625
-(let [input (->> (slurp "src/y2016/input201625") (re-seq #"[^\n]+"))]
-  input)
+(let [f (computer 25)]
+  (->> 1000 range rest (some #(if (f {"a" % "b" 0 "c" 0 "d" 0}) %))))
+;; 196
+;; lines 1-8 calculate a+2534 and stores it in 'd'. 2534=7*362, two constants found in line 2 and 3
+;; lines 9-30 repetitively output (mod d 2), (mod (mod d 2), (mod (mod (mod d 2))) essentially.
+;; so the question becomes what's the first positive number with a binary representation of #"(10)+" after 2534

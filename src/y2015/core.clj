@@ -15,8 +15,7 @@
 (let [input (->> (slurp "src/y2015/input201501") (map {\( 1, \) -1}))]
   [(reduce + input)
    (->> (map #(if (= -1 %) %2) (reductions + input) (rest (range)))
-        (drop-while nil?)
-        first)])
+        (some identity))])
 ;; [232 1783]
 
 
@@ -54,7 +53,7 @@
       five0 [\0 \0 \0 \0 \0]
       six0  [\0 \0 \0 \0 \0 \0]
       md5 (fn [^String s] (format "%032x" (BigInteger. 1 (.digest algorithm (.getBytes s)))))
-      f (fn [regex] (->> (range) rest (keep #(if (re-seq regex (md5 (str input %))) %)) first))]
+      f (fn [regex] (->> (range) rest (some #(if (re-seq regex (md5 (str input %))) %))))]
   (map f [#"^00000" #"^000000"]))
 ;; (254575 1038736)
 
@@ -66,7 +65,7 @@
                     (some #(= (first %) (second %)) (partition 2 1 s))
                     (not-any? #{[\a \b] [\c \d] [\p \q] [\x \y]} (partition 2 1 s))))
       nice2? (fn [s] (and (re-seq #"(..).*\1" s) (re-seq #"(.).\1" s)))
-      input (->> (slurp "src/y2015/input201505") (re-seq #"[^\n]+"))]
+      input (->> (slurp "src/y2015/input201505") (re-seq #".+"))]
   (->> [nice1? nice2?] (map #(count (filter % input)))))
 ;; (258 53)
 
@@ -138,7 +137,7 @@
 
 
 ;; 201508
-(let [inputs (->> (slurp "src/y2015/input201508") (re-seq #"[^\n]+"))
+(let [inputs (->> (slurp "src/y2015/input201508") (re-seq #".+"))
       f (fn [s]
           (let [d1 (re-seq #"\\\\" s)
                 s' (str/replace s #"\\\\" "")
@@ -323,7 +322,7 @@
 
 
 ;; 201518
-(let [grid (->> (slurp "src/y2015/input201518") (re-seq #"#|\.") vec)
+(let [grid (->> (slurp "src/y2015/input201518") (re-seq #"[#.]") vec)
       neighbors (fn [[x y]]
                   (for [a [-1 0 1]
                         b [-1 0 1]
@@ -538,8 +537,7 @@
                 [min-packages-count max-packages-count] ((juxt first last) (sort (map count list-of-groups)))]
             (->> (range min-packages-count (inc max-packages-count))
                  (map (fn [packages-count] (filter (f packages-count goal) list-of-groups)))
-                 (filter seq)
-                 first
+                 (some seq)
                  (map #(reduce * %))
                  (reduce min))))]
   (pmap g [[3 one-pass-filter] [4 two-passes-filter]]))

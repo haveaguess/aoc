@@ -34,7 +34,7 @@
 
 
 ;; 202003
-(let [input (->> (slurp "src/y2020/input202003") (re-seq #"[^\n]+"))
+(let [input (->> (slurp "src/y2020/input202003") (re-seq #".+"))
       len (count (first input))
       f (fn [step]
           (fn [line n]
@@ -85,7 +85,7 @@
 
 ;; 202007
 (let [input (->> (slurp "src/y2020/input202007")
-                 (re-seq #"[^\n]+")
+                 (re-seq #".+")
                  (map #(re-seq #"(\d+ )?(\w+ \w+)(?= bag)" %)))
       input1 (map (fn [[root & leaves]]
                     {:root (root 2) :leaves (set (map #(% 2) leaves))})
@@ -470,7 +470,7 @@
 
 ;; 202021
 (let [input (->> (slurp "src/y2020/input202021")
-                 (re-seq #"[^\n]+")
+                 (re-seq #".+")
                  (map #(let [[ingredients _ allergens] (->> (re-seq #"\w+" %) (partition-by #{"contains"}))]
                          [(set ingredients) (set allergens)])))
       all-ingredients (reduce clojure.set/union (map first input))
@@ -572,7 +572,7 @@
 ;; nw offsets se, sw offsets ne, e offsets w, and one unit of w can offset one unit of both se and ne
 ;; neighbors of [0 0] starting with neighbor in the east and continuing clockwise are:
 ;; [1 1] [1 0] [0 -1] [-1 -1] [-1 0] [0 1]
-(let [input (->> (slurp "src/y2020/input202024") (re-seq #"[^\n]+"))
+(let [input (->> (slurp "src/y2020/input202024") (re-seq #".+"))
       neighbors (fn [xy] (map #(map + xy %) [[1 1] [1 0] [0 -1] [-1 -1] [-1 0] [0 1]]))
       f (fn [s]
           (let [m (->> (re-seq #"se|sw|nw|ne|w|e" s) frequencies)
