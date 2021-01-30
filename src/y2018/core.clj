@@ -399,14 +399,378 @@
              (str/join (subvec r input-n (+ input-n 10)))
              (let [[new-r new-a new-b] (f r a b)]
                (recur new-r [new-a new-b]))))
-      q2 (loop [r r
-                [a b] [0 1]]
-           (let [c (count r)]
-             (cond (and (<= 7 c) (= input-a (subvec r (- c (count input-a)) c)))
-                   (- c (count input-a))
-                   (and (<= 7 c) (= input-a (subvec r (- c (count input-a) 1) (- c 1))))
-                   (- c (count input-a) 1)
-                   :else (let [[new-r new-a new-b] (f r a b)]
-                           (recur new-r [new-a new-b])))))]
+      q2 (let [l (count input-a)]
+           (loop [r r
+                  [a b] [0 1]]
+             (let [c (count r)]
+               (cond (and (<= (inc l) c) (= input-a (subvec r (- c l 1) (- c 1))))
+                     (- c l 1)
+                     (and (<= l c) (= input-a (subvec r (- c l) c)))
+                     (- c l)
+                     :else (let [[new-r new-a new-b] (f r a b)]
+                             (recur new-r [new-a new-b]))))))]
   [q1 q2])
 ;; ["3138510102" 20179081]
+
+
+;; 201815
+(let [input (slurp "src/y2018/input201815")
+      fixed-grid (->> (str/escape input {\E \., \G, \.}) str/split-lines (map vec) vec)
+      width (count (first fixed-grid))
+      target-map {\E \G, \G \E}
+      egs (->> (str/replace input "\n" "")
+               (keep-indexed
+                (fn [idx ch]
+                  (if (#{\E \G} ch)
+                    [idx {:xy [(quot idx width) (mod idx width)] :ch ch :hp 200}])))
+               (into {}))
+      build-grid (fn [grid egs] (reduce-kv #(assoc-in % (:xy %3) (:ch %3)) grid egs))
+      draw (fn [msg grid egs]
+             (println msg)
+             (mapv #(println (str/join %)) (build-grid grid egs))
+             (mapv println (sort-by #(:xy (val %)) egs)))
+      expand (fn [loc] (map #(let [new-xy (mapv + (:xy loc) %)]
+                               {:xy new-xy :next (or (:next loc) new-xy)})
+                            [[-1 0] [0 -1] [0 1] [1 0]]))
+      find-neighbor
+      (fn find-neighbor [xy ch egs]
+        (let [grid (build-grid fixed-grid egs)]
+          (loop [radius 1
+                 seen #{xy}
+                 starting [{:xy xy}]]
+            (let [edge-xys (->> (mapcat expand starting)
+                                (remove #(or (#{\# ch} (get-in grid (:xy %) \#))
+                                             (seen (:xy %)))))
+                  target-xys (filter #(= (target-map ch) (get-in grid (:xy %))) edge-xys)]
+              (cond (seq target-xys)
+                    (cond (= radius 1)
+                          [radius xy (->> (filter #((set (map :xy target-xys)) (:xy (val %))) egs)
+                                          (sort-by #(vector (:hp (val %)) (:xy (val %))))
+                                          first
+                                          key)]
+                          (= radius 2)
+                          (let [new-xy (->> (map #(vector (:xy %) (:next %)) target-xys) sort first second)]
+                            [radius
+                             new-xy
+                             ((find-neighbor new-xy ch egs) 2)])
+                          :else
+                          [radius
+                           (->> (map #(vector (:xy %) (:next %)) target-xys) sort first second)
+                           :skip])
+                    (seq edge-xys)
+                    (let [consolidated-edge-xys
+                          (->> (group-by :xy edge-xys)
+                               (map (fn [x] {:xy (key x)
+                                             :next (->> x val (map :next) sort first)})))]
+                      (recur (inc radius)
+                             (into seen (map :xy consolidated-edge-xys))
+                             consolidated-edge-xys)))))))
+      q1 (loop [rounds 0
+                egs egs
+                [eg-id & more-ids :as ids] (map key (sort-by #(:xy (val %)) egs))]
+           (cond (= 1 (->> (vals egs) (map :ch) frequencies count))
+                 (let [r (if (some egs ids) rounds (inc rounds))
+                       hp (reduce + (map :hp (vals egs)))]
+                   (* r hp))
+
+                 eg-id
+                 (if-let [{:keys [xy ch hp]} (egs eg-id)]
+                   (if-let [[radius new-xy neighbor-id] (find-neighbor xy ch egs)]
+                     (let [egs0 (if (<= radius 2)
+                                  (if (< 3 (get-in egs [neighbor-id :hp]))
+                                    (update-in egs [neighbor-id :hp] - 3)
+                                    (dissoc egs neighbor-id))
+                                  egs)
+                           egs1 (assoc-in egs0 [eg-id :xy] new-xy)]
+                       (recur rounds egs1 more-ids))
+                     (recur rounds egs more-ids))
+                   (recur rounds egs more-ids))
+
+                 :else
+                 (recur (inc rounds) egs (map key (sort-by #(:xy (val %)) egs)))))
+      f (fn [elf-power]
+          (let [power-map {\E elf-power, \G 3}]
+            (loop [rounds 0
+                   egs egs
+                   [eg-id & more-ids :as ids] (map key (sort-by #(:xy (val %)) egs))]
+              (cond (= 1 (->> (vals egs) (map :ch) frequencies count))
+                    (let [r (if (some egs ids) rounds (inc rounds))
+                          hp (reduce + (map :hp (vals egs)))]
+                      (* r hp))
+
+                    eg-id
+                    (if-let [{:keys [xy ch hp]} (egs eg-id)]
+                      (if-let [[radius new-xy neighbor-id] (find-neighbor xy ch egs)]
+                        (let [egs0 (if (<= radius 2)
+                                     (if (< (power-map ch) (get-in egs [neighbor-id :hp]))
+                                       (update-in egs [neighbor-id :hp] - (power-map ch))
+                                       (if (= ch \E)
+                                         (dissoc egs neighbor-id)
+                                         {:failed :true}))
+                                     egs)
+                              egs1 (assoc-in egs0 [eg-id :xy] new-xy)]
+                          (if (:failed egs1)
+                            nil
+                            (recur rounds egs1 more-ids)))
+                        (recur rounds egs more-ids))
+                      (recur rounds egs more-ids))
+
+                    :else
+                    (recur (inc rounds) egs (map key (sort-by #(:xy (val %)) egs)))))))
+      q2 (->> (map f (drop 4 (range))) (some identity))]
+  [q1 q2])
+;; [228240 52626]
+
+
+;; 201816
+(let [parse (fn [xs]
+              (loop [[x & more :as xs] xs
+                     sample []]
+                (if (= x "B")
+                  (recur (drop 12 more) (conj sample (->> (take 12 more) (map edn/read-string) (partition 4))))
+                  [sample (->> (map edn/read-string xs) (partition 4))])))
+      solve (fn [m]
+              (loop [mapping {}
+                     m m]
+                (if-let [[name opcode-set] (some #(if (= 1 (count (val %))) %) m)]
+                  (let [opcode (first opcode-set)
+                        m0 (reduce #(update % %2 disj opcode) m (keys m))]
+                    (recur (assoc mapping opcode name) m0))
+                  mapping)))
+      registers [0 0 0 0]
+      fns {:addr (fn [r [_ a b c]] (assoc r c (+       (r a) (r b))))
+           :addi (fn [r [_ a b c]] (assoc r c (+       (r a)    b)))
+           :mulr (fn [r [_ a b c]] (assoc r c (*       (r a) (r b))))
+           :muli (fn [r [_ a b c]] (assoc r c (*       (r a)    b)))
+           :banr (fn [r [_ a b c]] (assoc r c (bit-and (r a) (r b))))
+           :bani (fn [r [_ a b c]] (assoc r c (bit-and (r a)    b)))
+           :borr (fn [r [_ a b c]] (assoc r c (bit-or  (r a) (r b))))
+           :bori (fn [r [_ a b c]] (assoc r c (bit-or  (r a)    b)))
+           :setr (fn [r [_ a b c]] (assoc r c (r a)))
+           :seti (fn [r [_ a b c]] (assoc r c a))
+           :gtir (fn [r [_ a b c]] (assoc r c (if (>    a  (r b)) 1 0)))
+           :gtri (fn [r [_ a b c]] (assoc r c (if (> (r a)    b)  1 0)))
+           :gtrr (fn [r [_ a b c]] (assoc r c (if (> (r a) (r b)) 1 0)))
+           :eqir (fn [r [_ a b c]] (assoc r c (if (=    a  (r b)) 1 0)))
+           :eqri (fn [r [_ a b c]] (assoc r c (if (= (r a)    b)  1 0)))
+           :eqrr (fn [r [_ a b c]] (assoc r c (if (= (r a) (r b)) 1 0)))}
+      [samples test] (->> (slurp "src/y2018/input201816") (re-seq #"B|\d+") parse)
+      q1 (->> samples
+              (filter (fn [[ir code or]] (<= 3 (count (filter #(= (% (vec ir) code) or) (vals fns))))))
+              count)
+      mapping (->> samples
+                   (mapcat (fn [[ir code or]]
+                             (keep (fn [[name f]] (if (= (f (vec ir) code) or) [name (first code)])) fns)))
+                   (reduce (fn [r [name opcode]]
+                             (if (r name) (update r name conj opcode) (assoc r name #{opcode})))
+                           {})
+                   solve)
+      q2 ((reduce #((fns (mapping (first %2))) % %2) registers test) 0)]
+  [q1 q2])
+;; [636 674]
+
+
+;; 201817
+(let [parse (fn [[a b c d e f]]
+              (let [[b d f] (map edn/read-string [b d f])
+                    range1 (range b (inc b))
+                    range2 (range d (inc f))
+                    [x-range y-range] (if (= "x" a) [range1 range2] [range2 range1])]
+                (for [x x-range, y y-range]
+                  [y x])))
+      data0 (->> (slurp "src/y2018/input201817")
+                 (re-seq #"x|y|\.\.|\d+")
+                 (partition 6)
+                 (mapcat parse))
+      first-line-clay (reduce min (map first data0))
+      data  (cons [0 500] data0)
+      ys    (map first  data)
+      xs    (map second data)
+      min-y (reduce min ys)
+      max-y (reduce max ys)
+      min-x (dec (reduce min xs))
+      max-x (inc (reduce max xs))
+      base-grid (vec (repeat (- max-y min-y -1) (vec (repeat (- max-x min-x -1) "."))))
+      translate #(map - % [min-y min-x])
+      grid (-> (reduce #(assoc-in % (translate %2) "#") base-grid data)
+               (assoc-in (translate [0 500]) "+"))
+      draw (fn [grid] (mapv #(println (str/join %)) grid))
+      search-factory (fn [f]
+                       (fn [grid y x]
+                         (map #(loop [x0 (% x)] (if (f "#" (get-in grid [y x0] "#")) x0 (recur (% x0)))) [dec inc])))
+      clay-lr (search-factory =)
+      empty-lr (search-factory not=)
+      going-down (fn [grid y x]
+                   (loop [y (inc y), grid grid]
+                     (if (<= y (- max-y min-y))
+                       (case (get-in grid [y x])
+                         "|" [:done grid]
+                         "." (recur (inc y) (assoc-in grid [y x] "|"))
+                         "~" [:up grid (dec y)]
+                         "#" (let [[clay-left clay-right] (clay-lr grid (dec y) x)
+                                   [empty-left empty-right] (empty-lr grid y x)
+                                   left-spill (< clay-left empty-left)
+                                   right-spill (< empty-right clay-right)]
+                               (if (or left-spill right-spill)
+                                 [:spring
+                                  (reduce #(assoc-in % [(dec y) %2] "|")
+                                          grid
+                                          (concat
+                                           (if left-spill (range empty-left (inc x)))
+                                           (if right-spill (range x (inc empty-right)))))
+                                  (concat (if left-spill [[y empty-left]])
+                                          (if right-spill [[y empty-right]]))]
+                                 [:up grid (dec y)])))
+                       [:done grid])))
+      going-up (fn [grid y x]
+                 (loop [y y
+                        [prev-left prev-right] (clay-lr grid y x)
+                        grid0 (reduce #(assoc-in %1 [y %2] "~") grid (range (inc prev-left) prev-right))]
+                   (let [[left right] (clay-lr grid0 (dec y) x)
+                         fill (if (or (< left prev-left) (< prev-right right)) "|" "~")
+                         real-left (if (< left prev-left)
+                                     (loop [a (dec prev-left)]
+                                       (if (= "#" (get-in grid0 [y a])) (recur (dec a)) a))
+                                     left)
+                         real-right (if (< prev-right right)
+                                      (loop [a (inc prev-right)]
+                                        (if (= "#" (get-in grid0 [y a])) (recur (inc a)) a))
+                                      right)
+                         grid1 (->> (range (if (< left prev-left) real-left (inc left))
+                                           (if (< prev-right right) (inc real-right) right))
+                                    (reduce #(assoc-in % [(dec y) %2] fill) grid0))]
+                     (if (or (< left prev-left) (< prev-right right))
+                       [grid1 (concat (if (< left prev-left)   [[(dec y) real-left]])
+                                      (if (< prev-right right) [[(dec y) real-right]]))]
+                       (recur (dec y) [left right] grid1)))))
+      f (fn [[y x] grid]
+          (let [[status grid0 y-or-spring] (going-down grid y x)]
+            (cond (= :done status)
+                  [grid0 :done]
+                  (= :spring status)
+                  [grid0 y-or-spring]
+                  (= :up status)
+                  (going-up grid0 y-or-spring x))))]
+  #_(draw grid)
+  (loop [[spring & more-springs] [(translate [0 500])]
+         grid grid]
+    (if spring
+      (let [[grid0 new-spring-or-status] (f spring grid)]
+        (if (= :done new-spring-or-status)
+          (recur more-springs grid0)
+          (recur (concat new-spring-or-status more-springs) grid0)))
+      (let [x (-> (flatten (subvec grid first-line-clay)) frequencies (select-keys ["|" "~"]))]
+        #_(draw grid)
+        [(reduce + (vals x)) (x "~")]))))
+;; [30737 24699]
+
+
+;; 201818
+(let [grid (->> (str/split-lines (slurp "src/y2018/input201818")) (map vec) vec)
+      y (count grid)
+      x (count (first grid))
+      adj (fn [grid y0 x0]
+            (-> (for [y [-1 0 1], x [-1 0 1]
+                      :when (not= 0 y x)
+                      :let [v (get-in grid [(+ y0 y) (+ x0 x)])]]
+                  v)
+                frequencies))
+      f (fn [grid]
+          (reduce (fn [r [y x v]] (assoc-in r [y x] v))
+                  grid
+                  (for [y0 (range y), x0 (range x)
+                        :let [vmap (adj grid y0 x0)
+                              v (case (get-in grid [y0 x0])
+                                  \. (if (<= 3 (vmap \| 0)) \| \.)
+                                  \| (if (<= 3 (vmap \# 0)) \# \|)
+                                  \# (if (and (<= 1 (vmap \| 0)) (<= 1 (vmap \# 0))) \# \.))]]
+                    [y0 x0 v])))
+      g (fn [grid] (reduce * (-> grid flatten frequencies (select-keys [\| \#]) vals)))
+      draw (fn [grid] (mapv #(println (str/join %)) grid))]
+  [(g (-> (iterate f grid) (nth 10)))
+   (loop [seen-set #{grid}
+          seen-vec [grid]
+          n 1]
+     (let [grid0 (f (peek seen-vec))]
+       (if (seen-set grid0)
+         (let [idx (->> seen-vec (keep-indexed #(if (= grid0 %2) %1)) first)
+               v (subvec seen-vec idx)]
+           (g (v (mod (- 1000000000 n) (count v)))))
+         (recur (conj seen-set grid0) (conj seen-vec grid0) (inc n)))))])
+;; [486878 190836]
+
+
+;; 201819
+(let [parse (fn [s] (let [[op op1 op2 op3] (re-seq #"\w+" s)]
+                      (cons (keyword op) (map edn/read-string [op1 op2 op3]))))
+      [ip-binding & instructions] (str/split-lines (slurp "src/y2018/input201819"))
+      ip-reg (-> (re-seq #"\d" ip-binding) first edn/read-string)
+      instructions (mapv parse instructions)
+      c-instructions (count instructions)
+      fns {:addr (fn [r [_ a b c]] (assoc r c (+       (r a) (r b))))
+           :addi (fn [r [_ a b c]] (assoc r c (+       (r a)    b)))
+           :mulr (fn [r [_ a b c]] (assoc r c (*       (r a) (r b))))
+           :muli (fn [r [_ a b c]] (assoc r c (*       (r a)    b)))
+           :banr (fn [r [_ a b c]] (assoc r c (bit-and (r a) (r b))))
+           :bani (fn [r [_ a b c]] (assoc r c (bit-and (r a)    b)))
+           :borr (fn [r [_ a b c]] (assoc r c (bit-or  (r a) (r b))))
+           :bori (fn [r [_ a b c]] (assoc r c (bit-or  (r a)    b)))
+           :setr (fn [r [_ a b c]] (assoc r c (r a)))
+           :seti (fn [r [_ a b c]] (assoc r c a))
+           :gtir (fn [r [_ a b c]] (assoc r c (if (>    a  (r b)) 1 0)))
+           :gtri (fn [r [_ a b c]] (assoc r c (if (> (r a)    b)  1 0)))
+           :gtrr (fn [r [_ a b c]] (assoc r c (if (> (r a) (r b)) 1 0)))
+           :eqir (fn [r [_ a b c]] (assoc r c (if (=    a  (r b)) 1 0)))
+           :eqri (fn [r [_ a b c]] (assoc r c (if (= (r a)    b)  1 0)))
+           :eqrr (fn [r [_ a b c]] (assoc r c (if (= (r a) (r b)) 1 0)))}]
+  (loop [registers [0 0 0 0 0 0]
+         ip 0]
+    (if (<= c-instructions ip)
+      (registers 0)
+      (let [instruction (instructions ip)
+            new-registers ((fns (first instruction)) (assoc registers ip-reg ip) instruction)
+            new-ip (inc (new-registers ip-reg))]
+        (recur new-registers new-ip)))))
+;; 912
+
+
+;; 201820
+(let [dir-map {\N [-1 0], \S [1 0], \W [0 -1], \E [0 1]}
+      input (-> (slurp "src/y2018/input201820") str/trim (str/escape {\^ \(, \$ \)}))
+      d (loop [[c & more] input
+               distance 0
+               locs nil
+               current-locs [0 0]
+               distance-map {[0 0] 0}]
+          (case c
+            nil distance-map
+            \( (recur more distance (cons [distance current-locs] locs) current-locs distance-map)
+            \) (recur more distance (rest locs) current-locs distance-map)
+            \| (recur more (ffirst locs) locs ((first locs) 1) distance-map)
+            (let [new-distance (inc distance)
+                  new-current (mapv + current-locs (dir-map c))
+                  new-distance-map (update distance-map new-current #(if (nil? %) new-distance (min % new-distance)))]
+              (recur more new-distance locs new-current new-distance-map))))]
+  [(reduce max (vals d))
+   (count (filter #(<= 1000 %) (vals d)))])
+;; [3465 7956]
+
+
+;; 201822
+(let [[depth target-x target-y] (->> (slurp "src/y2018/input201822") (re-seq #"\d+") (map edn/read-string))
+      ;;[depth x y] [510 10 10]
+      height (inc target-y)
+      width (inc target-x)
+      f (fn [m n]
+          (let [y (quot n width)
+                x (mod n width)
+                v (-> (cond (and (= x 0) (= y 0)) 0
+                            (and (= x target-x) (= y target-y)) 0
+                            (= x 0) (* 48271 y)
+                            (= y 0) (* 16807 x)
+                            :else (* (m [y (dec x)]) (m [(dec y) x])))
+                      (+ depth)
+                      (mod 20183))]
+            (assoc m [y x] v)))
+      geo-map (reduce f {} (range (* height width)))]
+  (->> (vals geo-map) (map #(mod % 3)) frequencies sort (map val) (map * [0 1 2]) (reduce +)))

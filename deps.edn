@@ -1,4 +1,4 @@
-{:deps {org.clojure/clojure {:mvn/version "1.10.2-rc1"}}
+{:deps {org.clojure/clojure {:mvn/version "1.10.2"}}
  :aliases
  {:cider-clj {:extra-deps {nrepl/nrepl       {:mvn/version "0.8.3"}
                            cider/cider-nrepl {:mvn/version "0.25.5"}}

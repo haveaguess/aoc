@@ -427,8 +427,11 @@
 
 
 ;; 202019
-(let [[rules messages] (-> (slurp "src/y2020/input202019") (str/split #"\n\n"))]
-  )
+(let [parse (fn [xs] (->> (str/split-lines xs) (map #(re-seq #"(\d+): (\d+|\|)" %))))
+      [rules messages] (-> (slurp "src/y2020/input202019") (str/split #"\n\n"))
+      messages (str/split-lines messages)]
+  (parse rules)
+)
 
 
 ;; 202020
