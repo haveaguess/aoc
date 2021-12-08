@@ -166,7 +166,7 @@
 
 ;; 201510
 (let [input (->> (slurp "src/y2015/input201510") (re-seq #"\d"))
-      f (fn [xs] (->> (partition-by identity xs) (mapcat #(list (count %) (first %))) (apply str)))
+      f (fn [xs] (->> (partition-by identity xs) (mapcat (juxt count first)) (apply str)))
       xs (->> (iterate f input) (drop 40))]
   [(count (first xs))
    (count (nth xs 10))])
@@ -436,10 +436,10 @@
       fn-existing-magic
       (fn [status]
         (reduce (fn [status [magic turns]]
-                  (cond (> turns 0) (-> (cond
-                                          (= magic :shield)   (-> status (assoc-in  [:player :armor] 7))
-                                          (= magic :poison)   (-> status (update-in [:boss :hp]      #(- % 3)))
-                                          (= magic :recharge) (-> status (update-in [:player :mana]  #(+ % 101))))
+                  (cond (> turns 0) (-> (condp = magic
+                                          :shield   (-> status (assoc-in  [:player :armor] 7))
+                                          :poison   (-> status (update-in [:boss :hp]      #(- % 3)))
+                                          :recharge (-> status (update-in [:player :mana]  #(+ % 101))))
                                         (update-in [:magic magic] dec))
                         (= magic :shield) (assoc-in status [:player :armor] 0)
                         :else status))
@@ -447,17 +447,18 @@
                 (:magic status)))
       fn-player-turn
       (fn [status action]
-        (-> (cond
-              (= action :missile)  (update-in status [:boss :hp] #(- % 4))
-              (= action :drain)    (-> status (update-in [:boss :hp] #(- % 2)) (update-in [:player :hp] #(+ % 2)))
-              (= action :shield)   (assoc-in  status [:magic action] 6)
-              (= action :poison)   (assoc-in  status [:magic action] 6)
-              (= action :recharge) (assoc-in  status [:magic action] 5))
+        (-> (condp = action
+              :missile  (update-in status [:boss :hp] #(- % 4))
+              :drain    (-> status (update-in [:boss :hp] #(- % 2)) (update-in [:player :hp] #(+ % 2)))
+              :shield   (assoc-in  status [:magic action] 6)
+              :poison   (assoc-in  status [:magic action] 6)
+              :recharge (assoc-in  status [:magic action] 5))
             (update-in [:player :mana-spent] #(+ % (get-in magics [action :cost])))
             (update-in [:player :mana]       #(- % (get-in magics [action :cost])))))
       fn-boss-turn
       (fn [status]
-        (update-in status [:player :hp] #(- % (max 1 (- (get-in status [:boss :damage]) (get-in status [:player :armor]))))))
+        (update-in status [:player :hp] #(- % (max 1 (- (get-in status [:boss :damage])
+                                                        (get-in status [:player :armor]))))))
       f (fn [mode]
           (let [min-mana-spent (atom 999999999)
                 g (fn g [action status]

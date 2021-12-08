@@ -427,11 +427,14 @@
 
 
 ;; 202019
-(let [parse (fn [xs] (->> (str/split-lines xs) (map #(re-seq #"(\d+): (\d+|\|)" %))))
+(let [parse (fn [[x & more]]
+              (edn/read-string x))
       [rules messages] (-> (slurp "src/y2020/input202019") (str/split #"\n\n"))
       messages (str/split-lines messages)]
-  (parse rules)
-)
+  (->> (re-seq #"\n|\d+|\||a|b" rules)
+       (partition-by #(= "\n" %))
+       (remove #(= 1 (count %))) #_
+       (map parse)))
 
 
 ;; 202020
