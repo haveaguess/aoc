@@ -123,19 +123,6 @@
 ;; (356922 100347031)
 
 
-(let [data (->> (slurp "src/y2021/input202107") (re-seq #"\d+") (map edn/read-string) sort)
-      m0 (first data)
-      m1 (last data)
-      f0 #(Math/abs (- % %2))
-      f1 #(let [k (Math/abs (- % %2))] (/ (* k (inc k)) 2))
-      avg (/ (reduce + data) (count data))]
-  [(last (filter #(< % avg) data))
-   (float avg)
-   (first (filter #(< avg %) data))
-   491
-
-   (reduce + (map #(Math/abs (- 491 %)) data))])
-
 ;; 202108
 (let [data (->> (slurp "src/y2021/input202108") (re-seq #"[^\n]+") (map #(re-seq #"\w+" %)))
       data1 (mapcat #(drop 10 %) data)
@@ -157,7 +144,7 @@
           (let [x0 (map set (take 10 line))
                 l6 (filter #(= 6 (count %)) x0)
                 l5 (filter #(= 5 (count %)) x0)
-                m (-> (reduce (fn [r [l n]] (assoc r (first (filter #(= l (count %)) x0)) n))
+                m (-> (reduce (fn [r [l n]] (assoc r (some #(if (= l (count %)) %) x0) n))
                               {}
                               [[2 1] [4 4] [3 7] [7 8]])
                       (into (f l6 l5)))]
