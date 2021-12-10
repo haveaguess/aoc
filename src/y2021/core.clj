@@ -125,30 +125,64 @@
 
 ;; 202108
 (let [data (->> (slurp "src/y2021/input202108") (re-seq #"[^\n]+") (map #(re-seq #"\w+" %)))
-      data1 (mapcat #(drop 10 %) data)
       f (fn [l6set l5set]
           (into
            (for [l6 l6set
-                 :let [l6l5diff (sort (map #(count (set/difference l6 %)) l5set))]]
-             (cond
-               (= [2 2 2] l6l5diff) [l6 0]
-               (= [1 2 2] l6l5diff) [l6 6]
-               (= [1 1 2] l6l5diff) [l6 9]))
+                 :let [l6l5diff (map #(count (set/difference l6 %)) l5set)]]
+             [l6 ({[2 2 2] 0, [1 2 2] 6, [1 1 2] 9} (sort l6l5diff))])
            (for [l5 l5set
-                 :let [l5l6diff (sort (map #(count (set/difference l5 %)) l6set))]]
-             (cond
-               (= [1 1 1] l5l6diff) [l5 2]
-               (= [0 1 1] l5l6diff) [l5 3]
-               (= [0 0 1] l5l6diff) [l5 5]))))
+                 :let [l5l6diff (map #(count (set/difference l5 %)) l6set)]]
+             [l5 ({[1 1 1] 2, [0 1 1] 3, [0 0 1] 5} (sort l5l6diff))])))
       g (fn [line]
           (let [x0 (map set (take 10 line))
-                l6 (filter #(= 6 (count %)) x0)
-                l5 (filter #(= 5 (count %)) x0)
+                l6set (filter #(= 6 (count %)) x0)
+                l5set (filter #(= 5 (count %)) x0)
                 m (-> (reduce (fn [r [l n]] (assoc r (some #(if (= l (count %)) %) x0) n))
                               {}
                               [[2 1] [4 4] [3 7] [7 8]])
-                      (into (f l6 l5)))]
-            (->> line (drop 10) (map set) (map m) (str/join) Integer/parseInt)))]
-  [(count (filter #(#{2 3 4 7} (count %)) data1))
+                      (into (f l6set l5set)))]
+            (->> line (drop 10) (map set) (map m) (reduce #(+ (* 10 %) %2)))))]
+  [(->> data (mapcat #(drop 10 %)) (filter #(#{2 3 4 7} (count %))) count)
    (reduce + (map g data))])
 ;; [321 1028926]
+
+
+;; 202109
+(let [data (vec (for [line (->> (slurp "src/y2021/input202109") (re-seq #"[^\n]+"))]
+                  (->> (re-seq #"\d" line) (mapv edn/read-string))))
+      h (count data)
+      w (count (first data))
+      low-points (for [y (range h), x (range w)
+                       :let [v (get-in data [y x])
+                             neighbors (for [[oy ox] [[0 1] [0 -1] [1 0] [-1 0]]
+                                             :let [nv (get-in data [(+ y oy) (+ x ox)])]
+                                             :when nv]
+                                         nv)]
+                       :when (every? #(< v %) neighbors)]
+                   v)
+      neighbor (fn [ps points]
+                 (set (for [[y x] ps
+                            [oy ox] [[0 1] [0 -1] [1 0] [-1 0]]
+                            :let [p [(+ y oy) (+ x ox)]]
+                            :when (points p)]
+                        p)))
+      basin (fn [basin-points]
+              (loop [points basin-points
+                     ps (hash-set (first points))]
+                (let [ps-neighbor (neighbor ps points)]
+                  (if (seq ps-neighbor)
+                    (recur (set/difference points ps-neighbor) (set/union ps ps-neighbor))
+                    ps))))]
+  [(+ (reduce + low-points) (count low-points))
+   (->> (loop [basin-points (set (for [y (range h), x (range w)
+                                       :when (not= 9 (get-in data [y x]))]
+                                   [y x]))
+               basin-count []]
+          (if (seq basin-points)
+            (let [b (basin basin-points)]
+              (recur (set/difference basin-points b) (conj basin-count (count b))))
+            basin-count))
+        (sort >)
+        (take 3)
+        (reduce *))])
+;; [489 1056330]
