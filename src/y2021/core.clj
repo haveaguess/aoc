@@ -186,3 +186,21 @@
         (take 3)
         (reduce *))])
 ;; [489 1056330]
+
+
+;; 202110
+(let [m1 {\( \), \{ \}, \[ \], \< \>}
+      m2 {\) 3, \] 57, \} 1197, \> 25137}
+      m3 {\) 1, \] 2, \} 3, \> 4}
+      f (fn [line]
+          (reduce #(cond (= (m1 (first %)) %2) (rest %)
+                         (m1 %2) (cons %2 %)
+                         :else (reduced %2))
+                  (list (first line))
+                  (rest line)))
+      g (fn [xs] (reduce #(+ (* 5 %) (m3 (m1 %2))) 0 xs))
+      data (->> (slurp "src/y2021/input202110") (re-seq #"[^\n]+") (map f))]
+  [(->> data (remove seq?) (map m2) (reduce +))
+   (let [data1 (->> (filter seq? data) (map g) sort)]
+     (nth data1 (quot (count data1) 2)))])
+;; [315693 1870887234]
