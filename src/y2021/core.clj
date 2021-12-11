@@ -204,3 +204,42 @@
    (let [data1 (->> (filter seq? data) (map g) sort)]
      (nth data1 (quot (count data1) 2)))])
 ;; [315693 1870887234]
+
+
+;; 202111
+(let [data (vec (for [line (->> (slurp "src/y2021/input202111") (re-seq #"[^\n]+"))]
+                  (->> (re-seq #"\d" line) (mapv edn/read-string))))
+      h (count data)
+      w (count (first data))
+      total (* h w)
+      g0 #(update-in % %2 inc)                      ;; inc energy
+      g1 #(assoc-in % %2 0)                         ;; 9+ becomes 0
+      g2 #(set (for [y (range h), x (range w)       ;; find all 9+
+                     :when (< 9 (get-in % [y x]))]
+                 [y x]))
+      g3 #(for [[y x] %                             ;; find adjacent octopuses of 9+
+                yo [-1 0 1], xo [-1 0 1]
+                :when (not= xo yo 0)
+                :let [y' (+ y yo), x' (+ x xo)]
+                :when (and (< -1 y' h) (< -1 x' w))]
+            [y' x'])
+      f (fn [{a0 :data cnt :cnt}]
+          (let [a1 (reduce g0 a0 (for [y (range h), x (range w)] [y x]))
+                a2 (loop [a1 a1
+                          flash0 #{}
+                          flash1 (g2 a1)]
+                     (if-let [flashd (seq (set/difference flash1 flash0))]
+                       (let [a1' (reduce g0 a1 (g3 flashd))]
+                         (recur a1' flash1 (g2 a1')))
+                       {:data a1, :cnt (+ cnt (count flash0))}))
+                a3 (reduce g1 (:data a2) (g2 (:data a2)))]
+            (assoc a2 :data a3)))]
+  [(:cnt (nth (iterate f {:data data, :cnt 0}) 100))
+   (->> (iterate f {:data data, :cnt 0})
+        (map :cnt)
+        (partition 2 1)
+        (map (fn [[x0 x1]] (- x1 x0)))
+        (take-while #(not= total %))
+        count
+        inc)])
+;; [1688 403]
