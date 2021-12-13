@@ -238,8 +238,36 @@
    (->> (iterate f {:data data, :cnt 0})
         (map :cnt)
         (partition 2 1)
-        (map (fn [[x0 x1]] (- x1 x0)))
-        (take-while #(not= total %))
-        count
-        inc)])
+        (keep-indexed (fn [n [x0 x1]] (if (= total (- x1 x0)) (inc n))))
+        first)])
 ;; [1688 403]
+
+
+;; 202112
+(let [f (fn [r [v1 v2]]
+          (-> r
+              (update v1 #(if (seq %) (conj % v2) [v2]))
+              (update v2 #(if (seq %) (conj % v1) [v1]))))
+      data (->> (slurp "src/y2021/input202112") (re-seq #"\w+") (partition 2) (reduce f {}))
+      small-caves (->> data keys (filter #(and (not (#{"start" "end"} %)) (re-find #"[a-z]" %))))
+      g (fn [v]
+          (let [m (frequencies v)]
+            (some #(= 2 (m %)) small-caves)))
+      h (fn [f]
+          (fn [{:keys [vs r]}]
+            (let [t (for [v vs
+                          neighbor (data (first v))]
+                      (cond (= "start" neighbor) nil
+                            (= "end" neighbor) {:r 1}
+                            (and (re-find #"[a-z]" neighbor)
+                                 ((set v) neighbor)
+                                 (f v)) nil
+                            :else {:vs (cons neighbor v)}))]
+              {:vs (->> (keep :vs t) (reduce conj []))
+               :r (->> (keep :r t) count (+ r))})))]
+  (for [f [identity g]]
+    (->> (iterate (h f) {:vs ['("start")] :r 0})
+         (drop-while #(seq (:vs %)))
+         first
+         :r)))
+;; (5252 147784)
