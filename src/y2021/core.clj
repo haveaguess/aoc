@@ -271,3 +271,34 @@
          first
          :r)))
 ;; (5252 147784)
+
+
+;; 202113
+(let [data (->> (slurp "src/y2021/input202113") (re-seq #"\d+|x|y") (map edn/read-string) (partition 2))
+      f (fn [{:keys [s r] :as m} [x y]]
+          (cond (= x 'y) (let [s' (into #{} (for [[x0 y0] s
+                                                  :when (not= y0 y)]
+                                              [x0 (cond (< y0 y) y0
+                                                        :else (+ y y (- y0)))]))]
+                           {:s s', :r (conj r s')})
+                (= x 'x) (let [s' (into #{} (for [[x0 y0] s
+                                                  :when (not= x0 x)]
+                                              [(cond (< x0 y) x0
+                                                     :else (+ y y (- x0))) y0]))]
+                           {:s s', :r (conj r s')})
+                :else (update m :s conj [x y])))
+      r (:r (reduce f {:s #{}, :r []} data))
+      x (->> (map first (last r)) (reduce max))
+      y (->> (map second (last r)) (reduce max))
+      a (reduce (fn [a [x y]] (assoc-in a [y x] "▓"))
+                (vec (repeat (inc y) (vec (repeat (inc x) "░"))))
+                (last r))]
+  [(count (first r))
+   (dorun (map #(println (str/join %)) a))])
+;; [775 nil]
+;; ▓▓▓░░▓▓▓▓░▓░░▓░▓▓▓░░▓░░▓░▓▓▓░░▓░░▓░▓▓▓░
+;; ▓░░▓░▓░░░░▓░░▓░▓░░▓░▓░░▓░▓░░▓░▓░▓░░▓░░▓
+;; ▓░░▓░▓▓▓░░▓░░▓░▓░░▓░▓░░▓░▓░░▓░▓▓░░░▓░░▓
+;; ▓▓▓░░▓░░░░▓░░▓░▓▓▓░░▓░░▓░▓▓▓░░▓░▓░░▓▓▓░
+;; ▓░▓░░▓░░░░▓░░▓░▓░░░░▓░░▓░▓░░░░▓░▓░░▓░▓░
+;; ▓░░▓░▓▓▓▓░░▓▓░░▓░░░░░▓▓░░▓░░░░▓░░▓░▓░░▓
