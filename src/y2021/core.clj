@@ -302,3 +302,26 @@
 ;; ▓▓▓░░▓░░░░▓░░▓░▓▓▓░░▓░░▓░▓▓▓░░▓░▓░░▓▓▓░
 ;; ▓░▓░░▓░░░░▓░░▓░▓░░░░▓░░▓░▓░░░░▓░▓░░▓░▓░
 ;; ▓░░▓░▓▓▓▓░░▓▓░░▓░░░░░▓▓░░▓░░░░▓░░▓░▓░░▓
+
+
+;; 202114
+;; track pairs instead
+(let [[s0 & rules] (->> (slurp "src/y2021/input202114") (re-seq #"\w+"))
+      rules (->> (for [[s d] (partition 2 rules)] [(seq s) (first d)]) (into {}))
+      m (->> (partition 2 1 s0) frequencies)
+      f (fn [m]
+          (reduce (fn [r [x cnt]]
+                    (update r x #(+ (or % 0) cnt)))
+                  {}
+                  (for [[[c1 c2 :as c] cnt] m
+                        x (partition 2 1 [c1 (rules c) c2])]
+                    [x cnt])))
+      g (fn [m]
+          (reduce (fn [r [[c1 c2] cnt]]
+                    (-> r (update c1 #(+ (or % 0) cnt)) (update c2 #(+ (or % 0) cnt))))
+                  {(first s0) 1, (last s0) 1}
+                  m))
+      h (fn [m] (let [f #(fn [m] (-> (apply % val m) val (/ 2)))]
+                  (reduce - (map #((f %) m) [max-key min-key]))))]
+  (map #(-> (iterate f m) (nth %) g h) [10 40]))
+;; (2745 3420801168962)
