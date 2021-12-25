@@ -328,6 +328,9 @@
 
 
 ;; 202121
+;; I want to mention very nice solution to problem 2 here:
+;; https://github.com/zelark/AoC-2021/blob/main/src/zelark/aoc_2021/day_21.clj
+;; https://github.com/nbardiuk/adventofcode/blob/master/2021/src/day21.clj
 (let [[_ p1 _ p2] (->> (slurp "src/y2021/input202121") (re-seq #"\d+") (map edn/read-string))
       normal-dice (cycle (range 1 101))
       dirac-dice (frequencies
@@ -379,3 +382,37 @@
          (reduce max (vals win))
          (recur (assoc state player pos-state) win (- 1 player)))))])
 ;; [504972 446968027750017N]
+
+
+;; 202125
+(let [data0 (slurp "src/y2021/input202125")
+      data1 (->> data0 (re-seq #"[^\n]+") (map #(re-seq #"." %)))
+      data2 (vec (re-seq #"." data0))
+      h (count data1)
+      w (count (first data1))
+      f0 (fn [data points]
+           (reduce (fn [r [[p1 v1] [p2 v2]]]
+                     (-> r (assoc p1 v1) (assoc p2 v2)))
+                   data
+                   points))
+      f1 (fn [data]
+           (f0 data (for [y (range h), x (range w)
+                          :let [i (+ x (* y w))
+                                k (if (= x (dec w))
+                                    (and (= ">" (data i)) (= "." (data (- (inc i) w))) [[i "."] [(- (inc i) w) ">"]])
+                                    (and (= ">" (data i)) (= "." (data (inc i)))       [[i "."] [(inc i) ">"]]))]
+                          :when k]
+                      k)))
+      f2 (fn [data]
+           (f0 data (for [y (range h), x (range w)
+                          :let [i (+ x (* y w))
+                                k (if (= y (dec h))
+                                    (and (= "v" (data i)) (= "." (data x))       [[i "."] [x "v"]])
+                                    (and (= "v" (data i)) (= "." (data (+ i w))) [[i "."] [(+ i w) "v"]]))]
+                          :when k]
+                      k)))]
+  (loop [data data2
+         n 1]
+    (let [datax (f2 (f1 data))]
+      (if (= data datax) n (recur datax (inc n))))))
+;; 426
