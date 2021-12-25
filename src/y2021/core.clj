@@ -325,3 +325,57 @@
                   (reduce - (map #((f %) m) [max-key min-key]))))]
   (map #(-> (iterate f m) (nth %) g h) [10 40]))
 ;; (2745 3420801168962)
+
+
+;; 202121
+(let [[_ p1 _ p2] (->> (slurp "src/y2021/input202121") (re-seq #"\d+") (map edn/read-string))
+      normal-dice (cycle (range 1 101))
+      dirac-dice (frequencies
+                  (for [i (range 1 4)
+                        j (range 1 4)
+                        k (range 1 4)]
+                    (+ i j k)))
+      f0 (fn [player-state]
+           (for [[pos m] player-state
+                 [score n1] m
+                 [offset n2] dirac-dice
+                 :let [new-pos (mod (+ pos offset) 10)]]
+             [new-pos (+ score new-pos 1) (* n1 n2)]))
+      f1 (fn [pos-state]
+           (reduce (fn [m [pos score n]]
+                     (update-in m [pos score] #(+ n (or % 0))))
+                   {}
+                   pos-state))
+      f2 (fn [pos-state]
+           (for [[pos m] pos-state
+                 [score n] m
+                 :when (<= 21 score)]
+             [pos score n]))
+      f3 (fn [pos-state win-pos]
+           (reduce (fn [r [pos score n]]
+                     (update r pos dissoc score))
+                   pos-state
+                   win-pos))]
+  [;; state is a map of position to score
+   (loop [state {0 [(dec p1) 0], 1 [(dec p2) 0]}
+          player 0
+          n 0
+          dice normal-dice]
+     (let [[pos score] (state player)
+           new-pos (mod (reduce + pos (take 3 dice)) 10)
+           new-score (+ score new-pos 1)]
+       (if (<= 1000 new-score) (* (second (state (- 1 player))) (+ n 3))
+           (recur (assoc state player [new-pos new-score]) (- 1 player) (+ n 3) (drop 3 dice)))))
+   ;; state is a map of position to score to occurence. Initial position has score of 0 and occurence of 1
+   (loop [state {0 {(dec p1) {0 1N}}, 1 {(dec p2) {0 1N}}}
+          win {0 0, 1 0}
+          player 0]
+     (let [pos-state (f1 (f0 (state player)))
+           win-pos (f2 pos-state)
+           pos-state (f3 pos-state win-pos)
+           multiplier (->> (state (- 1 player)) vals (mapcat vals) (reduce +))
+           win (update win player + (* multiplier (reduce + (map #(nth % 2) win-pos))))]
+       (if (empty? (mapcat val pos-state))
+         (reduce max (vals win))
+         (recur (assoc state player pos-state) win (- 1 player)))))])
+;; [504972 446968027750017N]
